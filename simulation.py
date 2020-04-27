@@ -20,6 +20,7 @@ from matplotlib import cm
 
 # some "global" variables
 plot = True     # True for plotting
+plot_volumes = True # True for step by step plotting of flow and estimation set parallelotopes
 r = 6.6 /2.0    # 6.6(cm) radius of wheels in cm 
 l = 13.2        # (cm) distance between the two weels 
 x1t = random.randint(0,25)  # starting position for x1
@@ -45,18 +46,26 @@ cz = []
 hullx = []
 hully = []
 hullz = []
+flow_volume = []
+flow_parallelotope = []
+estimation_volume = []
+estimation_parallelotope = []
 
 # some variables
 run_time = 0.01      # discretization time 
 break_steps = 400    # break time! 
 plotvar = 25         # define after how many steps the cube will be plotted! 
-camera_steps = 150   # define after how many steps we use the camera. Later on this maybe regarding the volume of the box
+camera_steps = 100   # define after how many steps we use the camera. Later on this maybe regarding the volume of the box
 # static disturbances
 d1 = [-0.01,0.01]
 d2 = [-0.01,0.01]
 d3 = [-0.1,0.1]
+# compatibility bounds
+w1 = 2  # static at the time being
+w2 = 0.1   # 10% percentage of control action for angle
 
-
+#TODO general TODOs
+#TODO the hull lists are the same with estimation_parallelotope. Fix that. 
 
 def rotational(x1,x2,x3,df):
     gain = r/l * k1 * df  * run_time
@@ -206,12 +215,24 @@ def plots(steps):
         plt.savefig("./output/methods.png")
         plt.show()
 
+    # difference between two methods
+    plt.plot(t, flow_volume, 'r.',label='volumes of flow set parallelotope')
+    plt.plot(t, estimation_volume, 'b.',label='volumes of estimation set parallelotope cm^3')
+    plt.xlabel('steps', color='#1C2833')
+    plt.ylabel('volumes of flow , estimation set at each step', color='#1C2833')
+    plt.legend(loc='upper left')
+    plt.grid()
+    if plot:
+        plt.savefig("./output/volumes.png")
+        plt.show()
+
 def plot_cube():
     fig = plt.figure()
     ax = fig.gca(projection='3d')
     ax.set_xlabel('x1')
     ax.set_ylabel('x2')
     ax.set_zlabel('x3')
+
     for i in range (0,8):
         printx = []
         printy = []
@@ -222,159 +243,49 @@ def plot_cube():
             printx3.append(hullz[x][i])
         ax.scatter(printx, printy, printx3, c='b',s=20)
         ax.plot(printx, printy, printx3, color= 'r')
-
     
     for o in range (0 , len(hullx),plotvar): 
-        printx = []
-        printy = []
-        printx3 = []
-        printx.append(hullx[o][0])      
-        printx.append(hullx[o][1])
-        printy.append(hully[o][0])
-        printy.append(hully[o][1])
-        printx3.append(hullz[o][0])
-        printx3.append(hullz[o][1])
-        #sthn plot pane ta x values duo shmeiwn kai meta ta y values 2 shmeiwn
-        ax.plot(printx, printy, printx3, color=   'g')
-        # 
-        printx = []
-        printy = []
-        printx3 = []
-        printx.append(hullx[o][2])      
-        printx.append(hullx[o][3])
-        printy.append(hully[o][2])
-        printy.append(hully[o][3])
-        printx3.append(hullz[o][2])
-        printx3.append(hullz[o][3])
-        #sthn plot pane ta x values duo shmeiwn kai meta ta y values 2 shmeiwn
-        ax.plot(printx, printy, printx3, color=   'g')
-        # 
-        printx = []
-        printy = []
-        printx3 = []
-        printx.append(hullx[o][4])      
-        printx.append(hullx[o][5])
-        printy.append(hully[o][4])
-        printy.append(hully[o][5])
-        printx3.append(hullz[o][4])
-        printx3.append(hullz[o][5])
-        #sthn plot pane ta x values duo shmeiwn kai meta ta y values 2 shmeiwn
-        ax.plot(printx, printy, printx3, color=   'g')
-        # 
-        printx = []
-        printy = []
-        printx3 = []
-        printx.append(hullx[o][6])      
-        printx.append(hullx[o][7])
-        printy.append(hully[o][6])
-        printy.append(hully[o][7])
-        printx3.append(hullz[o][6])
-        printx3.append(hullz[o][7])
-        #sthn plot pane ta x values duo shmeiwn kai meta ta y values 2 shmeiwn
-        ax.plot(printx, printy, printx3, color=   'g')
-        # 
-        printx = []
-        printy = []
-        printx3 = []
-        printx.append(hullx[o][0])      
-        printx.append(hullx[o][2])
-        printy.append(hully[o][0])
-        printy.append(hully[o][2])
-        printx3.append(hullz[o][0])
-        printx3.append(hullz[o][2])
-        #sthn plot pane ta x values duo shmeiwn kai meta ta y values 2 shmeiwn
-        ax.plot(printx, printy, printx3, color=   'g')
-        # 
-        printx = []
-        printy = []
-        printx3 = []
-        printx.append(hullx[o][1])      
-        printx.append(hullx[o][3])
-        printy.append(hully[o][1])
-        printy.append(hully[o][3])
-        printx3.append(hullz[o][1])
-        printx3.append(hullz[o][3])
-        #sthn plot pane ta x values duo shmeiwn kai meta ta y values 2 shmeiwn
-        ax.plot(printx, printy, printx3, color=   'g')
-        # 
-        printx = []
-        printy = []
-        printx3 = []
-        printx.append(hullx[o][0])      
-        printx.append(hullx[o][4])
-        printy.append(hully[o][0])
-        printy.append(hully[o][4])
-        printx3.append(hullz[o][0])
-        printx3.append(hullz[o][4])
-        #sthn plot pane ta x values duo shmeiwn kai meta ta y values 2 shmeiwn
-        ax.plot(printx, printy, printx3, color=   'g')
-        # 
-        printx = []
-        printy = []
-        printx3 = []
-        printx.append(hullx[o][1])      
-        printx.append(hullx[o][5])
-        printy.append(hully[o][1])
-        printy.append(hully[o][5])
-        printx3.append(hullz[o][1])
-        printx3.append(hullz[o][5])
-        #sthn plot pane ta x values duo shmeiwn kai meta ta y values 2 shmeiwn
-        ax.plot(printx, printy, printx3, color=   'g')
-        # 
-        printx = []
-        printy = []
-        printx3 = []
-        printx.append(hullx[o][4])      
-        printx.append(hullx[o][6])
-        printy.append(hully[o][4])
-        printy.append(hully[o][6])
-        printx3.append(hullz[o][4])
-        printx3.append(hullz[o][6])
-        #sthn plot pane ta x values duo shmeiwn kai meta ta y values 2 shmeiwn
-        ax.plot(printx, printy, printx3, color=   'g')
-        # 
-        printx = []
-        printy = []
-        printx3 = []
-        printx.append(hullx[o][5])      
-        printx.append(hullx[o][7])
-        printy.append(hully[o][5])
-        printy.append(hully[o][7])
-        printx3.append(hullz[o][5])
-        printx3.append(hullz[o][7])
-        #sthn plot pane ta x values duo shmeiwn kai meta ta y values 2 shmeiwn
-        ax.plot(printx, printy, printx3, color=   'g')
-        # 
-        printx = []
-        printy = []
-        printx3 = []
-        printx.append(hullx[o][2])      
-        printx.append(hullx[o][6])
-        printy.append(hully[o][2])
-        printy.append(hully[o][6])
-        printx3.append(hullz[o][2])
-        printx3.append(hullz[o][6])
-        #sthn plot pane ta x values duo shmeiwn kai meta ta y values 2 shmeiwn
-        ax.plot(printx, printy, printx3, color=   'g')
-        # 
-        printx = []
-        printy = []
-        printx3 = []
-        printx.append(hullx[o][3])      
-        printx.append(hullx[o][7])
-        printy.append(hully[o][3])
-        printy.append(hully[o][7])
-        printx3.append(hullz[o][3])
-        printx3.append(hullz[o][7])
-        #sthn plot pane ta x values duo shmeiwn kai meta ta y values 2 shmeiwn
-        ax.plot(printx, printy, printx3, color=   'g')
+        for i in range (0,7,2): 
+            printx = []
+            printy = []
+            printx3 = []
+            printx.append(hullx[o][i])      
+            printx.append(hullx[o][i+1])
+            printy.append(hully[o][i])
+            printy.append(hully[o][i+1])
+            printx3.append(hullz[o][i])
+            printx3.append(hullz[o][i+1])
+            #sthn plot pane ta x values duo shmeiwn kai meta ta y values 2 shmeiwn
+            ax.plot(printx, printy, printx3, color=   'g')
 
-
-
-    #ax.scatter(printx, printy, printx3, c='r',s=100)
-    #ax.plot(printx, printy, printx3, color='r')
-
-    #ax.scatter3D(printx, printy, printx3, zdir='z',cmap='viridis')
+        for i in range (0,6):
+            if (i!=2 and i!=3): 
+                printx = []
+                printy = []
+                printx3 = []
+                printx.append(hullx[o][i])      
+                printx.append(hullx[o][i+2])
+                printy.append(hully[o][i])
+                printy.append(hully[o][i+2])
+                printx3.append(hullz[o][i])
+                printx3.append(hullz[o][i+2])
+                #sthn plot pane ta x values duo shmeiwn kai meta ta y values 2 shmeiwn
+                ax.plot(printx, printy, printx3, color=   'g')
+        
+        for i in range (0,4):
+            printx = []
+            printy = []
+            printx3 = []
+            printx.append(hullx[o][i])      
+            printx.append(hullx[o][i+4])
+            printy.append(hully[o][i])
+            printy.append(hully[o][i+4])
+            printx3.append(hullz[o][i])
+            printx3.append(hullz[o][i+4])
+            #sthn plot pane ta x values duo shmeiwn kai meta ta y values 2 shmeiwn
+            ax.plot(printx, printy, printx3, color=   'g')
+    
+    # center of parallelotope 
     cxlist = []
     cylist = []
     cx3list = []
@@ -382,10 +293,88 @@ def plot_cube():
         cxlist.append(cx[x])      # ta x ana 10 kai ana shmeio tou kubou 
         cylist.append(cy[x])
         cx3list.append(cz[x])
-    
     ax.scatter3D(cxlist, cylist, cx3list)
-    #ax.scatter3D(cx, cy, cz)
     plt.show()  
+
+def get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,x_over,y_under,y_over,x3_under,x3_over):
+    estimation_volume.append((xmaxstar-xminstar)*(ymaxstar-yminstar)*(x3maxstar-x3minstar))
+    flow_volume.append((x_over-x_under)*(y_over-y_under)*(x3_over-x3_under))
+    estimation_parallelotope.append(list(itertools.product([xminstar,xmaxstar],[yminstar,ymaxstar],[x3minstar,x3maxstar])))
+    flow_parallelotope.append(list(itertools.product([x_under,x_over],[y_under,y_over],[x3_under,x3_over])))
+
+    if (plot_volumes == True):
+        fig_vol = plt.figure()
+        vol = fig_vol.gca(projection='3d')
+        vol.set_xlabel('x1')
+        vol.set_ylabel('x2')
+        vol.set_zlabel('x3')
+        for i in range (0,7,2): 
+            vol1x = []
+            vol1y = []
+            vol1z = []
+            vol2x = []
+            vol2y = []
+            vol2z = []
+            vol1x.append(estimation_parallelotope[-1][i][0])      
+            vol1x.append(estimation_parallelotope[-1][i+1][0])
+            vol1y.append(estimation_parallelotope[-1][i][1])
+            vol1y.append(estimation_parallelotope[-1][i+1][1])
+            vol1z.append(estimation_parallelotope[-1][i][2])
+            vol1z.append(estimation_parallelotope[-1][i+1][2])
+            vol.plot(vol1x, vol1y, vol1z, color= 'g')
+            vol2x.append(flow_parallelotope[-1][i][0])      
+            vol2x.append(flow_parallelotope[-1][i+1][0])
+            vol2y.append(flow_parallelotope[-1][i][1])
+            vol2y.append(flow_parallelotope[-1][i+1][1])
+            vol2z.append(flow_parallelotope[-1][i][2])
+            vol2z.append(flow_parallelotope[-1][i+1][2])
+            vol.plot(vol2x, vol2y, vol2z, color='r')
+        for i in range (0,6):
+            if (i!=2 and i!=3): 
+                vol1x = []
+                vol1y = []
+                vol1z = []
+                vol2x = []
+                vol2y = []
+                vol2z = []
+                vol1x.append(estimation_parallelotope[-1][i][0])      
+                vol1x.append(estimation_parallelotope[-1][i+2][0])
+                vol1y.append(estimation_parallelotope[-1][i][1])
+                vol1y.append(estimation_parallelotope[-1][i+2][1])
+                vol1z.append(estimation_parallelotope[-1][i][2])
+                vol1z.append(estimation_parallelotope[-1][i+2][2])
+                vol.plot(vol1x, vol1y, vol1z, color=   'g')
+                vol2x.append(flow_parallelotope[-1][i][0])      
+                vol2x.append(flow_parallelotope[-1][i+2][0])
+                vol2y.append(flow_parallelotope[-1][i][1])
+                vol2y.append(flow_parallelotope[-1][i+2][1])
+                vol2z.append(flow_parallelotope[-1][i][2])
+                vol2z.append(flow_parallelotope[-1][i+2][2])
+                vol.plot(vol2x, vol2y, vol2z, color=   'r')
+        for i in range (0,4):
+            vol1x = []
+            vol1y = []
+            vol1z = []
+            vol2x = []
+            vol2y = []
+            vol2z = []
+            vol1x.append(estimation_parallelotope[-1][i][0])      
+            vol1x.append(estimation_parallelotope[-1][i+4][0])
+            vol1y.append(estimation_parallelotope[-1][i][1])
+            vol1y.append(estimation_parallelotope[-1][i+4][1])
+            vol1z.append(estimation_parallelotope[-1][i][2])
+            vol1z.append(estimation_parallelotope[-1][i+4][2])
+            vol.plot(vol1x, vol1y, vol1z, color=   'g')
+            vol2x.append(flow_parallelotope[-1][i][0])      
+            vol2x.append(flow_parallelotope[-1][i+4][0])
+            vol2y.append(flow_parallelotope[-1][i][1])
+            vol2y.append(flow_parallelotope[-1][i+4][1])
+            vol2z.append(flow_parallelotope[-1][i][2])
+            vol2z.append(flow_parallelotope[-1][i+4][2])
+            vol.plot(vol2x, vol2y, vol2z, color= 'r')
+        i = str(len(flow_parallelotope)-1)
+        plt.savefig("./output/cube"+i+".png")     
+        plt.show()  
 
 def lists_renew(x1,x2,x3,d,m,df,angle):
     x1_set.append(x1)
@@ -490,21 +479,24 @@ def run_flow(time, d1, d2, d3, u1, u2, u3, jumptime , initial_set, mode,xmin,xma
     x3_over = max(listx3)
     print ("Flow:",x_under,x_over,y_under,y_over,x3_under,x3_over)
     measur1 = distance
-    w =  2.2 #random.uniform(0.001,0.002)
-    measur2 = u3
-    w2 = 0.1* abs(measur2) #random.uniform(0.001,0.002)
-    yrootmin, yrootmax = optimize_quadratic(y_under,y_over, ymin,ymax,measur1,w)
-    xrootmin, xrootmax = optimize_quadratic(x_under,x_over, xmin,xmax,measur1,w)
-
+    wtran =  w1 
+    wangle = w2* abs(u3) #random.uniform(0.001,0.002)
+    yrootmin, yrootmax = optimize_quadratic(y_under,y_over, ymin,ymax,measur1,wtran)
+    xrootmin, xrootmax = optimize_quadratic(x_under,x_over, xmin,xmax,measur1,wtran)
     xminstar = max(x_under, (xmin))
-    xmaxstar = min(x_over, (xmax +math.sqrt(measur1+w)))
+    xmaxstar = min(x_over, (xmax +math.sqrt(measur1+wtran)))
     yminstar = max(y_under, (ymin))
-    ymaxstar = min(y_over, (ymax +math.sqrt(measur1+w)))
-    #print ("Measur:" , measur1,measur2)
-    x3minstar, x3maxstar = optimization_problem(x3_under,x3_over,x3min,x3max,measur2,w2)    
+    ymaxstar = min(y_over, (ymax +math.sqrt(measur1+wtran)))
+
+    x3minstar, x3maxstar = optimization_problem(x3_under,x3_over,x3min,x3max,u3,wangle)    
     print ("Optimization", xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar)
+    xvalue,yvalue,x3value,cube = calculateEstimationSet(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar)
+    
+    get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,x_over,y_under,y_over,x3_under,x3_over)
+    # TODO plot volume of flow set and estimation set at each time both as a cube and as an absolute number
+
+    # previous setting. input to convex hull 
     #vertices = list(itertools.product([xminstar,xmaxstar],[yminstar,ymaxstar],[x3minstar,x3maxstar]))
-    xvalue,yvalue,x3value,cube = calculateEstimationSet(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3max )
     #return vertices 
     return xvalue,yvalue,x3value,cube
 
@@ -643,6 +635,7 @@ def calculateConvexHull(est_set,vertices):
     return (tempx,tempy,tempz,convex_points)
 
 def simulation():
+    starting_time = time.time()
     #initialization of simulation
     x1in = x1 = random.randint(0,25)
     x2in = x2 = random.randint(0,25) 
@@ -661,7 +654,7 @@ def simulation():
     print ("Target Position: ", x1t,x2t)
     print ("\n")
     while (d>e):
-        #input("Press Enter to continue...")
+        input("Press Enter to continue...")
         df = calculateangle (x1,x2,x3) 
         #TODO fix zero division error
         if abs(x1-x1t)/(x1-x1t) >= 0 or abs(x2-x2t)/(x2-x2t) >= 0 :
@@ -689,11 +682,11 @@ def simulation():
         #x1,x2,x3,est_set = calculateConvexHull(est_set,vertices)
         initial_set, xmin,xmax,ymin,ymax,x3min,x3max = get_initialset(est_set)
         print ("Final Position: ","{:10.2f}".format(x1t),"{:10.2f}".format(x2t), x3)
-        print ("Representative Position: ","{:10.2f}".format(x1),"{:10.2f}".format(x2), x3)
+        print ("Representative Position: ","{:10.2f}".format(x1),"{:10.2f}".format(x2), "{:10.2f}".format(x3))
         print ("M: ",m)
         d = math.sqrt((x1-x1t)**2 + (x2-x2t)**2)
-        print ("Distance difference:", d)
-        print ("Angle difference:", df)
+        print ("Distance difference:", "{:10.2f}".format(d))
+        print ("Angle difference:", "{:10.2f}".format(df))
         print ("Steps: ",steps)
         print ("\n ")
         lists_renew(x1,x2,x3,d,m,df,angle) 
@@ -709,10 +702,11 @@ def simulation():
     print ("Initial Position:", x1in,x2in,"{:10.0f}".format(math.degrees(x3in)))
     print ("Target Position: ", x1t,x2t)
     print ("Final Position: ","{:10.2f}".format(x1),"{:10.2f}".format(x2),"{:10.0f}".format(math.degrees(x3)))
-    print ("Distance error tolerance: ",e)
-    print ("M tolerance: ",M)
-    print ("Number of changes in M:",changes_in_m)
-    print ("Steps:",steps)
+    print ("Distance error tolerance: ", e)
+    print ("M tolerance: ", M)
+    print ("Number of changes in M:", changes_in_m)
+    print ("Steps:", steps)
+    print ("Real time needed for simulation in sec :", "{:10.2f}".format(time.time() - starting_time))
     plots(steps)  
     plot_cube()
     
