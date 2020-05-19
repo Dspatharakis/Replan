@@ -3,4 +3,5 @@ NAME=$1
 cd /home/dspath/Downloads/flow/flowstar-2.1.0/
 ./flowstar < /home/dspath/Documents/Dsgit/Iot\ Replan\ Simulations/replan.model  > /dev/null
 cp ./outputs/$NAME.plt /home/dspath/Documents/Dsgit/Iot\ Replan\ Simulations/octagon.txt
+cp ./outputs/$NAME.flow /home/dspath/Documents/Dsgit/Iot\ Replan\ Simulations/flopipes.txt
 

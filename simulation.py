@@ -17,14 +17,24 @@ from matplotlib import cm
 from matplotlib.ticker import MaxNLocator
 from subprocess import call
 from matplotlib import cm
+from shapely.geometry import Point
+from shapely.geometry import LineString
+from shapely.geometry.polygon import Polygon
+from matplotlib.lines import Line2D
 
 # some "global" variables
 plot = True     # True for plotting
 plot_volumes = True # True for step by step plotting of flow and estimation set parallelotopes
+TRAN = False     # True for tran motion at step 1
+
 r = 6.6 /2.0    # 6.6(cm) radius of wheels in cm 
 l = 13.2        # (cm) distance between the two weels 
-x1t = random.randint(0,25)  # starting position for x1
-x2t = random.randint(0,25)  # starting position for x2
+if TRAN == True : 
+    x1t = 10
+    x2t = 10
+else:
+    x1t = random.randint(0,25)  # starting position for x1
+    x2t = random.randint(0,25)  # starting position for x2
 M = 5           # c boundary for M set
 e = 1           # break condition for distance from target position
 k1 = 10.8#10.8  # control gain for rotational motion
@@ -50,22 +60,36 @@ flow_volume = []
 flow_parallelotope = []
 estimation_volume = []
 estimation_parallelotope = []
-
+d1 = []
+d2 = []
+d3 = [] 
 # some variables
 run_time = 0.01      # discretization time 
-break_steps = 400    # break time! 
+break_steps = 1000    # break time! 
 plotvar = 25         # define after how many steps the cube will be plotted! 
-camera_steps = 100   # define after how many steps we use the camera. Later on this maybe regarding the volume of the box
+camera_steps = 5000   # define after how many steps we use the camera. Later on this maybe regarding the volume of the box
 # static disturbances
-d1 = [-0.01,0.01]
-d2 = [-0.01,0.01]
-d3 = [-0.1,0.1]
+d1_rot = [-0.1,0.1]
+d1_tran = [-0.1,0.1]
+d2_rot = [-0.1,0.1]
+d2_tran = [-0.1,0.1]
+d3_rot = [-0.1,0.1]
+d3_tran = [-1.0,1.0]
+d1_camera = 0.01
+d2_camera = 0.01
+d3_camera = 0.01
 # compatibility bounds
-w1 = 2  # static at the time being
-w2 = 0.1   # 10% percentage of control action for angle
+w1 = 0.000001  # static at the time being
+w2 = 0.3   # 10% percentage of control action for angle
+
+#TODO obstacles should be generated randomly
+obstacles = [[],[]]
 
 #TODO general TODOs
 #TODO the hull lists are the same with estimation_parallelotope. Fix that. 
+#TODO get_numbers should change if we want to use different run_time of flow and steps of flow.. now it is the same
+#TODO when i use the camera plot trajectories and plot cube should change!!  
+#TODO initial set should be an interval for x_3
 
 def rotational(x1,x2,x3,df):
     gain = r/l * k1 * df  * run_time
@@ -296,7 +320,7 @@ def plot_cube():
     ax.scatter3D(cxlist, cylist, cx3list)
     plt.show()  
 
-def get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,x_over,y_under,y_over,x3_under,x3_over):
+def get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,x_over,y_under,y_over,x3_under,x3_over,u1, u2, u3, d1, d2, d3):
     estimation_volume.append((xmaxstar-xminstar)*(ymaxstar-yminstar)*(x3maxstar-x3minstar))
     flow_volume.append((x_over-x_under)*(y_over-y_under)*(x3_over-x3_under))
     estimation_parallelotope.append(list(itertools.product([xminstar,xmaxstar],[yminstar,ymaxstar],[x3minstar,x3maxstar])))
@@ -315,20 +339,40 @@ def get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,
             vol2x = []
             vol2y = []
             vol2z = []
+            vol3x = []
+            vol3y = []
+            vol3z = []
             vol1x.append(estimation_parallelotope[-1][i][0])      
             vol1x.append(estimation_parallelotope[-1][i+1][0])
             vol1y.append(estimation_parallelotope[-1][i][1])
             vol1y.append(estimation_parallelotope[-1][i+1][1])
             vol1z.append(estimation_parallelotope[-1][i][2])
             vol1z.append(estimation_parallelotope[-1][i+1][2])
-            vol.plot(vol1x, vol1y, vol1z, color= 'g')
+            if i == 0 :
+                vol.plot(vol1x, vol1y, vol1z, color= 'g', label = "New Estimation Set")
+            else: 
+                vol.plot(vol1x, vol1y, vol1z, color= 'g')
             vol2x.append(flow_parallelotope[-1][i][0])      
             vol2x.append(flow_parallelotope[-1][i+1][0])
             vol2y.append(flow_parallelotope[-1][i][1])
             vol2y.append(flow_parallelotope[-1][i+1][1])
             vol2z.append(flow_parallelotope[-1][i][2])
             vol2z.append(flow_parallelotope[-1][i+1][2])
-            vol.plot(vol2x, vol2y, vol2z, color='r')
+            if i == 0 :
+                vol.plot(vol2x, vol2y, vol2z, linestyle=':' , color='r',  label = "Flow")
+            else: 
+                vol.plot(vol2x, vol2y, vol2z, linestyle=':' , color='r')
+            vol3x.append(estimation_parallelotope[-2][i][0])      
+            vol3x.append(estimation_parallelotope[-2][i+1][0])
+            vol3y.append(estimation_parallelotope[-2][i][1])
+            vol3y.append(estimation_parallelotope[-2][i+1][1])
+            vol3z.append(estimation_parallelotope[-2][i][2])
+            vol3z.append(estimation_parallelotope[-2][i+1][2])
+            if i == 0 :
+                vol.plot(vol3x, vol3y, vol3z, linestyle=':' ,color= 'b', label = "Previous estimation Set")
+            else: 
+                vol.plot(vol3x, vol3y, vol3z, linestyle=':' ,color= 'b')
+
         for i in range (0,6):
             if (i!=2 and i!=3): 
                 vol1x = []
@@ -337,6 +381,9 @@ def get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,
                 vol2x = []
                 vol2y = []
                 vol2z = []
+                vol3x = []
+                vol3y = []
+                vol3z = []
                 vol1x.append(estimation_parallelotope[-1][i][0])      
                 vol1x.append(estimation_parallelotope[-1][i+2][0])
                 vol1y.append(estimation_parallelotope[-1][i][1])
@@ -350,7 +397,14 @@ def get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,
                 vol2y.append(flow_parallelotope[-1][i+2][1])
                 vol2z.append(flow_parallelotope[-1][i][2])
                 vol2z.append(flow_parallelotope[-1][i+2][2])
-                vol.plot(vol2x, vol2y, vol2z, color=   'r')
+                vol.plot(vol2x, vol2y, vol2z, linestyle=':' ,color=   'r')
+                vol3x.append(estimation_parallelotope[-2][i][0])      
+                vol3x.append(estimation_parallelotope[-2][i+2][0])
+                vol3y.append(estimation_parallelotope[-2][i][1])
+                vol3y.append(estimation_parallelotope[-2][i+2][1])
+                vol3z.append(estimation_parallelotope[-2][i][2])
+                vol3z.append(estimation_parallelotope[-2][i+2][2])
+                vol.plot(vol3x, vol3y, vol3z, linestyle=':' ,color= 'b')
         for i in range (0,4):
             vol1x = []
             vol1y = []
@@ -358,6 +412,9 @@ def get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,
             vol2x = []
             vol2y = []
             vol2z = []
+            vol3x = []
+            vol3y = []
+            vol3z = []
             vol1x.append(estimation_parallelotope[-1][i][0])      
             vol1x.append(estimation_parallelotope[-1][i+4][0])
             vol1y.append(estimation_parallelotope[-1][i][1])
@@ -371,10 +428,42 @@ def get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,
             vol2y.append(flow_parallelotope[-1][i+4][1])
             vol2z.append(flow_parallelotope[-1][i][2])
             vol2z.append(flow_parallelotope[-1][i+4][2])
-            vol.plot(vol2x, vol2y, vol2z, color= 'r')
+            vol.plot(vol2x, vol2y, vol2z, linestyle=':' ,color= 'r')
+            vol3x.append(estimation_parallelotope[-2][i][0])      
+            vol3x.append(estimation_parallelotope[-2][i+4][0])
+            vol3y.append(estimation_parallelotope[-2][i][1])
+            vol3y.append(estimation_parallelotope[-2][i+4][1])
+            vol3z.append(estimation_parallelotope[-2][i][2])
+            vol3z.append(estimation_parallelotope[-2][i+4][2])
+            vol.plot(vol3x, vol3y, vol3z, linestyle=':' ,color= 'b')
+        # plot trajectories from previous estimation set vertices given the control action to validate that exist inside the new estimation set
+        for x in estimation_parallelotope[-2]:
+            for i in range (2):
+                for j in range (2):
+                    for k in range (2):
+                        x_trajectory = []
+                        y_trajectory = []
+                        x3_trajectory = []
+                        if (u3==0):
+                            x_trajectory = [x[0],(x[0]+u1*math.cos(x[2]))]
+                            y_trajectory = [x[1],(x[1]+u2*math.sin(x[2]))]
+                            x3_trajectory = [x[2],(x[2]+d3[k]*run_time)]
+                        else :
+                            x_trajectory = [x[0],(x[0]+d1[i]*run_time)]
+                            y_trajectory = [x[1],(x[1]+d2[j]*run_time)]
+                            x3_trajectory = [x[2],(x[2]+u3)]
+                        point = Point(x_trajectory[1],y_trajectory[1],x3_trajectory[1])
+                        polygon = Polygon(flow_parallelotope[-1])
+                        if (polygon.exterior.distance(point)) > 1e-2 : 
+                            print ("Danger possible trajectory outside of flow!")
+                            print (polygon.exterior.distance(point))
+                        vol.plot(x_trajectory,y_trajectory,x3_trajectory,linestyle='--' ,color= 'y')
+        # save figure
+        plt.legend(loc="upper left")
         i = str(len(flow_parallelotope)-1)
         plt.savefig("./output/cube"+i+".png")     
-        plt.show()  
+        #plt.show()  
+        plt.close()
 
 def lists_renew(x1,x2,x3,d,m,df,angle):
     x1_set.append(x1)
@@ -390,20 +479,20 @@ def build_model(time, d1, d2, d3, u1, u2, u3, jumptime, initial_set, mode,output
     with open('replan.model', 'w') as the_file:
         the_file.write('hybrid reachability\n''{\n''  state var x,y,x3,t \n'' setting\n''{\n'
         'fixed steps '+str(run_time)+'\n''time '+str(run_time)+'\n' # time  
-        'remainder estimation 1e-2\n''identity precondition\n''gnuplot octagon '+ output+'\n'
+        'remainder estimation 1e-2\n''identity precondition\n''gnuplot grid 5 '+ output+'\n'
         'fixed orders 8\n''cutoff 1e-15\n''precision 2000\n''output '+name+'\n''max jumps 1\n''print on\n''}\n')
         the_file.write('modes\n'
         '{\n''tran\n''{ \n''nonpoly ode\n''{\n'"t' = 1\n")
         the_file.write("x3' ="+ str(d3) + "\n" # to d 1
-        "x' = "+str(u1)+"*cos(x3) \n"   # to u 1
-        "y' = "+str(u2)+"*sin(x3) \n""}\n") # to u 2
+        "x' = "+str(u1)+"*cos(x3) +"+str(d1)+ "\n"   # to u 1
+        "y' = "+str(u2)+"*sin(x3) +"+str(d2)+ "\n""}\n") # to u 2
         the_file.write("inv\n""{\n""t <= 1""\n""t<=1""\n") 
         # for item in invtran:
         #     the_file.write(item+"\n")
         the_file.write("\n"   
         "}\n""}\n"
         "rot\n""{\n""nonpoly ode\n""{\n"
-        "x3' = "+str(u3)+"\n"  # to u3
+        "x3' = "+str(u3)+"+"+str(d3)+"\n"  # to u3
         "x' = "+str(d1)+"\n""y' = "+str(d2)+"\n" # to d1
         "t' = 1\n""}\n""inv \n""{\n" # to d2
         "" "t <= 1""\n""t<=1""\n")
@@ -426,6 +515,7 @@ def get_numbers():
     octagon_vertices=[]
     with open("octagon.txt") as f:
         for line in f.readlines()[10:-3]:    # TODO this is very manual. we should target the last lines of the file if we choose longer run_time
+            if line == '\n': continue; 
             x=[]
             index = 0 
             b=0
@@ -438,7 +528,7 @@ def get_numbers():
             if b == float(run_time):
                 x.append(float(a))
                 octagon_vertices.append(x)
-    return octagon_vertices[:-1]
+    return min(octagon_vertices)[0], max(octagon_vertices)[0]
 
 def get_initialset(est_set):
     listx = [item[0] for item in est_set]
@@ -450,58 +540,201 @@ def get_initialset(est_set):
     # input("Press Enter to continue...")
     return initial_set, min(listx),max(listx), min(listy),max(listy), min(listx3),max(listx3)
 
+def get_tm_intervals(mode): 
+    with open("flopipes.txt") as f:
+        for line in f.readlines()[10:-3]:    # TODO this is very manual. we should target the last lines of the file if we choose longer run_time
+            if 'x = ' in line:
+                x_calc = line 
+            if 'y = ' in line:
+                y_calc = line
+            if 'x3 = ' in line:
+                x3_calc = line 
+    if (mode == "tran"):
+        x_flow_min , x_flow_max = get_nonlinear_flowpipe("x",x_calc)
+        y_flow_min , y_flow_max = get_nonlinear_flowpipe("y",y_calc)
+        x3_flow_min , x3_flow_max = get_linear_flowpipe("x3",x3_calc)
+
+    else: 
+        x_flow_min , x_flow_max = get_linear_flowpipe("x",x_calc)
+        y_flow_min , y_flow_max = get_linear_flowpipe("y",y_calc)
+        x3_flow_min , x3_flow_max = get_linear_flowpipe("x3",x3_calc)
+    return x_flow_min,x_flow_max,y_flow_min,y_flow_max,x3_flow_min,x3_flow_max
+
+def get_nonlinear_flowpipe (state_var,state_calc): 
+    local_t = run_time
+    local_var_1 = np.linspace(-1 , 1, 100)
+    local_var_2 = np.linspace(-1 , 1, 100)
+    local_var_3 = np.linspace(-1 , 1, 100)
+    local_var_4 = np.linspace(-1 , 1, 100)
+    #min 
+    state_safe = state_calc
+    state_calc = state_calc.replace("[","min(")   
+    state_calc = state_calc.replace("]",")")    
+    state_calc = state_calc.replace("^","**")   
+    state_calc = state_calc.replace(""+state_var+" = ","")   
+    state_calc = state_calc.replace("\n","") 
+    state_calc_min = ""
+    for item in state_calc.split(' ') :
+        if (item.find("min")) != -1 :
+            if item[4]=='-': 
+                item = item.replace("min","max")
+        state_calc_min += (item)
+    location = (state_calc_min.find("local_var_"))
+    #print (location)
+    if location == -1:   # catch the case where it is not actually a non_linear flowpiper after all! dunnoy why
+        return get_linear_flowpipe(state_var,state_calc)
+    try:
+        state_a_min = min(eval(state_calc_min[:location+11]))
+    except TypeError:
+        state_a_min = eval(state_calc_min[:location+11])
+    try:
+        state_b_min = min(eval(state_calc_min[location+12:]))
+    except TypeError:
+        state_b_min = eval(state_calc_min[location+12:])
+
+    state_out_min =  (state_a_min +state_b_min)
+    #print (state_out_min) 
+    #max
+    state_calc = state_safe
+    state_calc = state_calc.replace("[","max(")   
+    state_calc = state_calc.replace("]",")")    
+    state_calc = state_calc.replace("^","**")   
+    state_calc = state_calc.replace(""+state_var+" = ","") 
+    state_calc = state_calc.replace("\n","") 
+    state_calc_min = ""
+    for item in state_calc.split(' ') :
+        if (item.find("max")) != -1 : 
+            if item[4]=='-': 
+                item = item.replace("max","min")
+        state_calc_min += (item)
+    location = (state_calc_min.find("local_var_"))
+    try:
+         state_a_max = max(eval(state_calc_min[:location+11]))
+    except TypeError:
+         state_a_max = eval(state_calc_min[:location+11])
+    try:
+        state_b_max = max(eval(state_calc_min[location+12:]))
+    except TypeError:
+        state_b_max = eval(state_calc_min[location+12:])
+    state_out_max =  (state_a_max +state_b_max)
+    #print (state_out_max) 
+    return state_out_min, state_out_max
+
+def get_linear_flowpipe(state_var, state_calc):
+    # print (state_var)
+    # print (state_calc)
+    local_t = run_time
+    local_var_1 = np.linspace(-1 , 1, 100)
+    local_var_2 = np.linspace(-1 , 1, 100)
+    local_var_3 = np.linspace(-1 , 1, 100)
+    local_var_4 = np.linspace(-1 , 1, 100)
+    #min
+    state_safe = state_calc
+    state_calc = state_calc.replace("[","max(")   
+    state_calc = state_calc.replace("]",")")    
+    state_calc = state_calc.replace("^","**")   
+    state_calc = state_calc.replace(state_var+" = ","")  
+    state_calc = state_calc.replace("\n","")
+    try:
+        state_out_max = max(eval(state_calc))
+    except TypeError:
+        state_out_max = eval(state_calc)
+    #print (state_calc)
+    #max
+    state_calc = state_safe
+    state_calc = state_calc.replace("[","min(")   
+    state_calc = state_calc.replace("]",")")    
+    state_calc = state_calc.replace("^","**")   
+    state_calc = state_calc.replace(state_var+" = ","")  
+    state_calc = state_calc.replace("\n","") 
+    try:
+        state_out_min = min(eval(state_calc))
+    except TypeError:
+        state_out_min = eval(state_calc)
+    #print (x_out_min)
+    #print (x_out_max)
+    return state_out_min, state_out_max
+
 def run_flow(time, d1, d2, d3, u1, u2, u3, jumptime , initial_set, mode,xmin,xmax,ymin,ymax,x3min,x3max,distance,x3):
     output = "x,t"
     build_model(time, d1, d2, d3, u1/run_time, u2/run_time, u3/run_time, jumptime , initial_set, mode , output, "x") 
     rc = call(["./run.sh","x"])
-    verticesx = get_numbers()
-    #input("Press Enter to continue...")
-    output = "y,t"
-    build_model(time, d1, d2, d3, u1/run_time, u2/run_time, u3/run_time,  jumptime, initial_set, mode , output, "y") 
-    rc = call(["./run.sh","y"])
-    verticesy = get_numbers()
-    #input("Press Enter to continue...")
-    output = "x3,t"
-    build_model(time, d1, d2, d3, u1/run_time, u2/run_time, u3/run_time,jumptime, initial_set, mode , output, "x3") 
-    rc = call(["./run.sh","x3"])
-    verticesx3 = get_numbers()
+    # #verticesx = get_numbers()
+    # x_under, x_over = get_numbers()
+    # #input("Press Enter to continue...")
+    # output = "y,t"
+    # build_model(time, d1, d2, d3, u1/run_time, u2/run_time, u3/run_time,  jumptime, initial_set, mode , output, "y") 
+    # rc = call(["./run.sh","y"])
+    # #verticesy = get_numbers()
+    # y_under, y_over = get_numbers()
+    # #input("Press Enter to continue...")
+    # output = "x3,t"
+    # build_model(time, d1, d2, d3, u1/run_time, u2/run_time, u3/run_time,jumptime, initial_set, mode , output, "x3") 
+    # rc = call(["./run.sh","x3"])
+    # #verticesx3 = get_numbers()
+    # x3_under, x3_over = get_numbers()
+    ###########
+    x_under,x_over,y_under,y_over,x3_under,x3_over = get_tm_intervals(mode)
     print (mode)
     print ("Gains: ",u1,u2,u3)
     #input("Press Enter to continue...")
-    listx = [item[0] for item in verticesx]
-    listy = [item[0] for item in verticesy]
-    listx3 = [item[0] for item in verticesx3]
-    x_under = min(listx)
-    x_over = max(listx)
-    y_under = min(listy)
-    y_over = max(listy)
-    x3_under = min(listx3)
-    x3_over = max(listx3)
     print ("Flow:",x_under,x_over,y_under,y_over,x3_under,x3_over)
     measur1 = distance
-    wtran =  w1 
-    wangle = w2* abs(u3) #random.uniform(0.001,0.002)
-    yrootmin, yrootmax = optimize_quadratic(y_under,y_over, ymin,ymax,measur1,wtran)
-    xrootmin, xrootmax = optimize_quadratic(x_under,x_over, xmin,xmax,measur1,wtran)
-    xminstar = max(x_under, (xmin))
-    xmaxstar = min(x_over, (xmax +math.sqrt(measur1+wtran)))
-    yminstar = max(y_under, (ymin))
-    ymaxstar = min(y_over, (ymax +math.sqrt(measur1+wtran)))
+    y = distance 
+    #print (distance)
+    #TODO stupid change! 
+    if distance ==0 : wtranst = random.uniform(1.1,1.2)
+    else : wtranst = 0 
+    if u3 == 0 : wrotst = random.uniform(0.001,0.002)
+    else: wrotst = 0 
+    wtran =  w1 * distance #+ wtranst
+    wangle = w2 * abs(u3) + wrotst      #random.uniform(0.001,0.002)
 
+    #let's find x1,x2 intervals. the flow results cut with compatibility equations chosen. 
+    yrootmin, yrootmax = optimize_quadratic(y_under,y_over, ymin,ymax,measur1,wtran)   # I want the minimum and maximum value of under root! check overleaf
+    xrootmin, xrootmax = optimize_quadratic(x_under,x_over, xmin,xmax,measur1,wtran)   
+    
+    if xmin >= x_under :    #TODO edw thelei allagi logika. kati den paei kala! 
+        #print ("negative for x's")
+        xminstar = xmin - math.sqrt(y-wtran -yrootmin) 
+        if xminstar < x_under : xminstar = x_under
+        xmaxstar = xmax - math.sqrt(y+wtran -yrootmax) 
+        if xmaxstar > x_over : 
+            xmaxstar = x_over 
+        #if xmaxstar < xminstar : xmaxstar = xminstar
+
+    else : 
+        xminstar = xmin + math.sqrt(y-wtran -yrootmax) #max(x_under, (xmin))   # wrong if negative motion!! 
+        if xminstar < x_under : xminstar = x_under
+        #if x_under < xmax: xrootmin = 0 
+        xmaxstar = xmax + math.sqrt(y+wtran -yrootmin) #min(x_over, (xmax +math.sqrt(measur1+wtran))
+        if xmaxstar > x_over : 
+            print ("panw orio", xmaxstar, yrootmin, math.sqrt(y+wtran -yrootmin) )
+            xmaxstar = x_over 
+
+    if ymin >= y_under :
+        #print ("negative for y's")
+        yminstar = ymin - math.sqrt(y-wtran -xrootmin) 
+        if yminstar < y_under : yminstar = y_under
+        ymaxstar = ymax - math.sqrt(y+wtran -xrootmax)  
+        if ymaxstar > y_over : ymaxstar = y_over 
+        #if ymaxstar < yminstar : ymaxstar = yminstar
+
+    else: 
+        yminstar = ymin + math.sqrt(y-wtran -xrootmax) 
+        if yminstar < y_under : yminstar = y_under
+        #if y_under < ymax: yrootmin = 0 
+        ymaxstar = ymax + math.sqrt(y+wtran -xrootmin)  #min(y_over, (ymax +math.sqrt(measur1+wtran)))
+        if ymaxstar > y_over : ymaxstar = y_over 
+       
+    # find x3 interval! 
     x3minstar, x3maxstar = optimization_problem(x3_under,x3_over,x3min,x3max,u3,wangle)    
     print ("Optimization", xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar)
     xvalue,yvalue,x3value,cube = calculateEstimationSet(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar)
-    
-    get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,x_over,y_under,y_over,x3_under,x3_over)
-    # TODO plot volume of flow set and estimation set at each time both as a cube and as an absolute number
-
-    # previous setting. input to convex hull 
-    #vertices = list(itertools.product([xminstar,xmaxstar],[yminstar,ymaxstar],[x3minstar,x3maxstar]))
-    #return vertices 
+    get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,x_over,y_under,y_over,x3_under,x3_over,u1, u2, u3, d1, d2, d3)
     return xvalue,yvalue,x3value,cube
 
 def optimization_problem(v3min,v3max,z3min,z3max,y,w):
-    #TODO may need x_3 to be in [0,6.7] instead ofhaving negative values. CHECK!
     v3 = cp.Variable()
     z3 = cp.Variable()
     prob1 = cp.Problem(cp.Minimize(v3),
@@ -514,7 +747,6 @@ def optimization_problem(v3min,v3max,z3min,z3max,y,w):
         minimum = prob1.solve()
     except Exception as e:
         print(e)
-
     v3 = cp.Variable()
     z3 = cp.Variable()
     prob1 = cp.Problem(cp.Maximize(v3),
@@ -530,10 +762,12 @@ def optimization_problem(v3min,v3max,z3min,z3max,y,w):
     return minimum , maximum
 
 def optimize_quadratic(vmin,vmax,zmin,zmax,y,w):
+    #print (vmin,vmax,zmin,zmax,y,w)
+    if zmax >= vmax : w = -w 
     v = cp.Variable()
     z = cp.Variable()
     prob1 = cp.Problem(cp.Minimize(cp.square(v-z)),
-                        [cp.square(v-z)   <= y+w , 
+                        [cp.square(v-z)   <= y+w, 
                         z >= zmin , z <= zmax, 
                         v >= vmin , v <= vmax ])
     
@@ -545,28 +779,37 @@ def optimize_quadratic(vmin,vmax,zmin,zmax,y,w):
     v = cp.Variable()
     z = cp.Variable()
     prob1 = cp.Problem(cp.Maximize(v-z),
-                        [cp.square(v-z)   <= y-w , 
+                        [cp.square(v-z)   <= y-w, 
                         z >= zmin , z <= zmax, 
                         v >= vmin , v <= vmax ])
-    
+    if zmax >= vmax : 
+        #print ("going negative")
+        #going to negative of this state variable!! When we want to maximize a square and we have negative values. lets just minimize the inside! 
+        prob1 = cp.Problem(cp.Minimize(v-z),   # minimize a convex is not possible so we do a trick 
+                        [cp.square(v-z)   <= y-w, 
+                        z >= zmin , z <= zmax, 
+                        v >= vmin , v <= vmax ])
     try:
         maximum = prob1.solve()
     except Exception as e:
-        print(e)
-
-    return round(minimum,8) , round(maximum,8)
+        print(e)   
+    maximum = maximum**2  
+    #print (minimum , maximum)
+    if maximum >= y - w : 
+        maximum = y - w    # needed for round of dcp problem!!  
+    if minimum >= y + w : 
+        minimum = 0        # TODO needs reasoning!! 
+    #print (minimum , maximum)
+    return minimum , maximum 
 
 def calculateEstimationSet(xmin,xmax,ymin,ymax,x3min,x3max):  
-    #TODO append cx,cy,cz and hullx,hully,hullz
     vertices = list(itertools.product([xmin,xmax],[ymin,ymax],[x3min,x3max]))
     listx = [item[0] for item in vertices]
     listy = [item[1] for item in vertices]
     listx3 = [item[2] for item in vertices]
-
     cx.append((xmin+xmax)/2)
     cy.append((ymin+ymax)/2) 
     cz.append((x3min+x3max)/2)
-
     hullx.append(listx)
     hully.append(listy)
     hullz.append(listx3)  
@@ -637,14 +880,24 @@ def calculateConvexHull(est_set,vertices):
 def simulation():
     starting_time = time.time()
     #initialization of simulation
-    x1in = x1 = random.randint(0,25)
-    x2in = x2 = random.randint(0,25) 
-    x3in = x3 = random.randrange(100,128)/100 #random.randrange(10,628)/100
-    xmin = xmax = x1
-    ymin = ymax = x2
-    x3min = x3max = x3
-    est_set = [[x1,x2,x3]]
-    initial_set = ["["+str(x1)+","+str(x1)+"]","["+str(x2)+","+str(x2)+"]","["+str(x3)+","+str(x3)+"]",]
+    if TRAN == True:
+        x1in = x1 = 5#random.randint(0,25)
+        x2in = x2 = 5#random.randint(0,25) 
+        x3in = x3 = 1#random.randrange(100,128)/100 #random.randrange(10,628)/100
+    else : 
+        x1in = x1 = random.randint(0,25)
+        x2in = x2 = random.randint(0,25) 
+        x3in = x3 = random.randrange(100,128)/100 #random.randrange(10,628)/100
+    xmin = x1 - d1_camera
+    xmax = x1 + d1_camera
+    ymin = x2 - d2_camera
+    ymax = x2 + d2_camera
+    x3min = x3 - d3_camera
+    x3max = x3 + d3_camera 
+    #TODO Too manual change!
+    est_set = [[x1-d1_camera,x1+d1_camera],[x2-d2_camera,x2+d2_camera],[x3-d3_camera,x3+d3_camera]]
+    estimation_parallelotope.append(list(itertools.product([x1-d1_camera,x1+d1_camera],[x2-d2_camera,x2+d2_camera],[x3-d3_camera,x3+d3_camera])))
+    initial_set = ["["+str(x1- d1_camera)+","+str(x1+d1_camera)+"]","["+str(x2- d2_camera)+","+str(x2+d2_camera)+"]","["+str(x3- d3_camera)+","+str(x3+d3_camera)+"]",]
     steps = 0 
     steps2 = 0 
     changes_in_m = 0 
@@ -654,7 +907,7 @@ def simulation():
     print ("Target Position: ", x1t,x2t)
     print ("\n")
     while (d>e):
-        input("Press Enter to continue...")
+        #input("Press Enter to continue...")
         df = calculateangle (x1,x2,x3) 
         #TODO fix zero division error
         if abs(x1-x1t)/(x1-x1t) >= 0 or abs(x2-x2t)/(x2-x2t) >= 0 :
@@ -668,6 +921,9 @@ def simulation():
                 motion = 0
                 changes_in_m +=1 
             x1,x2,x3,gainx1,gainx2,gainx3,distance = translational(x1,x2,x3)
+            d1 = [d1_tran[0]*gainx1, d1_tran[1]*gainx1]
+            d2 = [d2_tran[0]*gainx2, d2_tran[1]*gainx2]
+            d3 = d3_tran
             mode = "tran"
             jumptime = 1 
         else:
@@ -675,6 +931,9 @@ def simulation():
                 motion = 1
                 changes_in_m +=1 
             x1,x2,x3,gainx1,gainx2,gainx3 = rotational(x1,x2,x3,df)
+            d1 = d1_rot
+            d2 = d2_rot 
+            d3 = [d3_rot[0]*gainx3, d3_rot[1]*gainx3]
             distance = 0 
             mode = "rot"
             jumptime = 0 
@@ -688,16 +947,22 @@ def simulation():
         print ("Distance difference:", "{:10.2f}".format(d))
         print ("Angle difference:", "{:10.2f}".format(df))
         print ("Steps: ",steps)
+        print ("Volume of estimation set: ", estimation_volume[-1])
+
         print ("\n ")
         lists_renew(x1,x2,x3,d,m,df,angle) 
         steps +=1 
         steps2 += 1 
         if steps > break_steps : break
-        if steps2 >= camera_steps :    # use camera and make estimation set a point! 
-            initial_set = ["["+str(x1)+","+str(x1)+"]","["+str(x2)+","+str(x2)+"]","["+str(x3)+","+str(x3)+"]",]
-            xmin = xmax = x1
-            ymin=ymax = x2
-            x3min = x3max = x3
+        if steps2 >= camera_steps or estimation_volume[-1] > 30 :    # use camera and make estimation set a point! 
+            print ("Offload due to Volume of estimation set: ", estimation_volume[-1])
+            initial_set = ["["+str(x1- d1_camera)+","+str(x1+d1_camera)+"]","["+str(x2- d2_camera)+","+str(x2+d2_camera)+"]","["+str(x3- d3_camera)+","+str(x3+d3_camera)+"]",]
+            xmin = x1 - d1_camera
+            xmax = x1 + d1_camera
+            ymin = x2 - d2_camera
+            ymax = x2 + d2_camera
+            x3min = x3 - d3_camera
+            x3max = x3+ d3_camera 
             steps2 = 0 
     print ("Initial Position:", x1in,x2in,"{:10.0f}".format(math.degrees(x3in)))
     print ("Target Position: ", x1t,x2t)
