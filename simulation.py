@@ -22,6 +22,19 @@ from shapely.geometry import LineString
 from shapely.geometry.polygon import Polygon
 from matplotlib.lines import Line2D
 
+# this is a parallelotope. 
+#  ----5  -  7
+#  |   /   / |
+#  |  1 - 3  |
+#  |  |   |  |
+#  |  0 - 2  |            0 is the bottom left! meaning minimum x,y,x3 
+#  |    \  \ |            7 is the up right! meaning maximum x,y,x3
+#  |-----4 - 6 
+# the links needed are:
+# 0 -> 1 , 0 -> 2 , 0-> 4, 1-> 3 , 1->5, 2->3, 2->6, 3->7, 4->5, 4->6, 5->7, 6->7 
+#
+
+
 # some "global" variables
 plot = True     # True for plotting
 plot_volumes = True # True for step by step plotting of flow and estimation set parallelotopes
@@ -82,9 +95,11 @@ d3_camera = 0.01
 w1 = 0.000001  # static at the time being
 w2 = 0.3   # 10% percentage of control action for angle
 
-#TODO obstacles should be generated randomly
-obstacles = [[],[]]
-
+#TODO obstacles should be generated randomly. obstacles dont care about the orientation. should be columns in the 3D space. or plot only in 2d 
+# obstacles are defined by two points according to: up left,  bottom right vertices of the obstacle (that is a parallelotope)
+obstacles = [[[3,5],[4,4]],[[13,14],[14,12]]]
+grid = [[[-1,0],[0,-1]],[[-1,25],[0,-1]],[[25,0],[26,-1]],[[25,26],[26,25]]] # make grid look as 4 obstacles
+collision_threshold = 15 # threshold to assume that we are close to obstacles (in cms)
 #TODO general TODOs
 #TODO the hull lists are the same with estimation_parallelotope. Fix that. 
 #TODO get_numbers should change if we want to use different run_time of flow and steps of flow.. now it is the same
@@ -444,6 +459,7 @@ def get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,
                         x_trajectory = []
                         y_trajectory = []
                         x3_trajectory = []
+                        #TODO change this and use the function of control actions.. Crucial!
                         if (u3==0):
                             x_trajectory = [x[0],(x[0]+u1*math.cos(x[2]))]
                             y_trajectory = [x[1],(x[1]+u2*math.sin(x[2]))]
@@ -458,6 +474,60 @@ def get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,
                             print ("Danger possible trajectory outside of flow!")
                             print (polygon.exterior.distance(point))
                         vol.plot(x_trajectory,y_trajectory,x3_trajectory,linestyle='--' ,color= 'y')
+        for item in obstacles:
+            maxx = item[1][0]
+            minx = item[0][0]
+            maxy = item[1][1]
+            miny = item[0][1]
+            minx3 = x3minstar
+            maxx3 = x3maxstar
+            obstacle_parallelotope = []
+            obstacle_parallelotope.append([minx,miny,minx3])
+            obstacle_parallelotope.append([minx,miny,maxx3]) 
+            obstacle_parallelotope.append([minx,maxy,minx3]) 
+            obstacle_parallelotope.append([minx,maxy,maxx3]) 
+            obstacle_parallelotope.append([maxx,miny,minx3]) 
+            obstacle_parallelotope.append([maxx,miny,maxx3]) 
+            obstacle_parallelotope.append([maxx,maxy,minx3]) 
+            obstacle_parallelotope.append([maxx,maxy,maxx3]) 
+            for i in range (0,7,2): 
+                volobx = []
+                voloby = []
+                volobz = []
+                volobx.append(obstacle_parallelotope[i][0])      
+                volobx.append(obstacle_parallelotope[i+1][0])
+                voloby.append(obstacle_parallelotope[i][1])
+                voloby.append(obstacle_parallelotope[i+1][1])
+                volobz.append(obstacle_parallelotope[i][2])
+                volobz.append(obstacle_parallelotope[i+1][2])
+                if i == 0 and obstacles.index(item)==0:
+                    vol.plot(volobx, voloby, volobz, linestyle='--',color= 'k', label = "Obstacles")
+                else: 
+                    vol.plot(volobx, voloby, volobz, linestyle='--',color= 'k')
+            for i in range (0,6):
+                if (i!=2 and i!=3): 
+                    volobx = []
+                    voloby = []
+                    volobz = []
+                    volobx.append(obstacle_parallelotope[i][0])      
+                    volobx.append(obstacle_parallelotope[i+2][0])
+                    voloby.append(obstacle_parallelotope[i][1])
+                    voloby.append(obstacle_parallelotope[i+2][1])
+                    volobz.append(obstacle_parallelotope[i][2])
+                    volobz.append(obstacle_parallelotope[i+2][2])
+                    vol.plot(volobx, voloby, volobz, linestyle='--',color= 'k')
+            for i in range (0,4):
+                volobx = []
+                voloby = []
+                volobz = []
+                volobx.append(obstacle_parallelotope[i][0])      
+                volobx.append(obstacle_parallelotope[i+4][0])
+                voloby.append(obstacle_parallelotope[i][1])
+                voloby.append(obstacle_parallelotope[i+4][1])
+                volobz.append(obstacle_parallelotope[i][2])
+                volobz.append(obstacle_parallelotope[i+4][2])
+                vol.plot(volobx, voloby, volobz, linestyle='--',color= 'k')
+
         # save figure
         plt.legend(loc="upper left")
         i = str(len(flow_parallelotope)-1)
@@ -539,6 +609,42 @@ def get_initialset(est_set):
     # print (initial_set)
     # input("Press Enter to continue...")
     return initial_set, min(listx),max(listx), min(listy),max(listy), min(listx3),max(listx3)
+
+def check_feasibility(est_set):
+    listx3 = [item[2] for item in est_set]
+    minx3 = min(listx3)
+    maxx3 = max(listx3)
+    no_borders = obstacles + grid
+    for obstacle in no_borders:
+        maxx = obstacle[1][0]
+        minx = obstacle[0][0]
+        maxy = obstacle[1][1]
+        miny = obstacle[0][1]
+        obstacle_parallelotope = []
+        obstacle_parallelotope.append([minx,miny,minx3])
+        obstacle_parallelotope.append([minx,miny,maxx3]) 
+        obstacle_parallelotope.append([minx,maxy,minx3]) 
+        obstacle_parallelotope.append([minx,maxy,maxx3]) 
+        obstacle_parallelotope.append([maxx,miny,minx3]) 
+        obstacle_parallelotope.append([maxx,miny,maxx3]) 
+        obstacle_parallelotope.append([maxx,maxy,minx3]) 
+        obstacle_parallelotope.append([maxx,maxy,maxx3])
+        collision = False
+        distance_obstacle = 10000
+        vertice_danger = 0  
+        for vertice in est_set:
+            point = Point(vertice[0],vertice[1],vertice[2])
+            polygon = Polygon(obstacle_parallelotope)
+            if (polygon.exterior.distance(point)) < collision_threshold : #TODO assign it to public vars
+                if distance_obstacle > polygon.exterior.distance(point):
+                    distance_obstacle = polygon.exterior.distance(point)
+                    vertice_danger = est_set.index(vertice)
+                    collision = True
+        if collision:
+            print ("Danger close to ostacle!")
+            print ("Distance to obstacle: " "{:10.2f}".format(distance_obstacle))
+            print ("Vertice of estimation set: ",vertice_danger)
+    return collision,vertice_danger
 
 def get_tm_intervals(mode): 
     with open("flopipes.txt") as f:
@@ -709,7 +815,7 @@ def run_flow(time, d1, d2, d3, u1, u2, u3, jumptime , initial_set, mode,xmin,xma
         #if x_under < xmax: xrootmin = 0 
         xmaxstar = xmax + math.sqrt(y+wtran -yrootmin) #min(x_over, (xmax +math.sqrt(measur1+wtran))
         if xmaxstar > x_over : 
-            print ("panw orio", xmaxstar, yrootmin, math.sqrt(y+wtran -yrootmin) )
+            #print ("panw orio", xmaxstar, yrootmin, math.sqrt(y+wtran -yrootmin) )
             xmaxstar = x_over 
 
     if ymin >= y_under :
@@ -894,7 +1000,6 @@ def simulation():
     ymax = x2 + d2_camera
     x3min = x3 - d3_camera
     x3max = x3 + d3_camera 
-    #TODO Too manual change!
     est_set = [[x1-d1_camera,x1+d1_camera],[x2-d2_camera,x2+d2_camera],[x3-d3_camera,x3+d3_camera]]
     estimation_parallelotope.append(list(itertools.product([x1-d1_camera,x1+d1_camera],[x2-d2_camera,x2+d2_camera],[x3-d3_camera,x3+d3_camera])))
     initial_set = ["["+str(x1- d1_camera)+","+str(x1+d1_camera)+"]","["+str(x2- d2_camera)+","+str(x2+d2_camera)+"]","["+str(x3- d3_camera)+","+str(x3+d3_camera)+"]",]
@@ -938,6 +1043,13 @@ def simulation():
             mode = "rot"
             jumptime = 0 
         x1,x2,x3,est_set = run_flow(time,d1,d2,d3,gainx1,gainx2,gainx3,jumptime,initial_set,mode,xmin,xmax,ymin,ymax,x3min,x3max,distance,x3)
+        collision , vertice_danger = check_feasibility(est_set)
+        if collision:
+            #print(est_set[vertice_danger])
+            x1 = est_set[vertice_danger][0]
+            x2 = est_set[vertice_danger][1]
+            x3 = est_set[vertice_danger][2]
+        #TODO if we want to assign the representative to a critical vertice (close to obstacle this is the place)
         #x1,x2,x3,est_set = calculateConvexHull(est_set,vertices)
         initial_set, xmin,xmax,ymin,ymax,x3min,x3max = get_initialset(est_set)
         print ("Final Position: ","{:10.2f}".format(x1t),"{:10.2f}".format(x2t), x3)
@@ -948,7 +1060,6 @@ def simulation():
         print ("Angle difference:", "{:10.2f}".format(df))
         print ("Steps: ",steps)
         print ("Volume of estimation set: ", estimation_volume[-1])
-
         print ("\n ")
         lists_renew(x1,x2,x3,d,m,df,angle) 
         steps +=1 
