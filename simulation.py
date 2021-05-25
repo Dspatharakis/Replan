@@ -8,8 +8,9 @@ import subprocess
 import itertools
 import cvxpy as cp
 from pypoman import compute_polytope_halfspaces
-from numpy import exp,arange , arctan , sqrt
+from numpy import exp,arange , arctan , sqrt, array
 from scipy import signal
+from math import cos,sin
 from scipy.integrate import odeint
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.spatial import ConvexHull
@@ -39,20 +40,21 @@ from matplotlib.lines import Line2D
 plot = True     # True for plotting
 plot_volumes = True # True for step by step plotting of flow and estimation set parallelotopes
 TRAN = False     # True for tran motion at step 1
+plot_obstacles = False 
 
 r = 6.6 /2.0    # 6.6(cm) radius of wheels in cm 
 l = 13.2        # (cm) distance between the two weels 
 if TRAN == True : 
-    x1t = 10
-    x2t = 10
+    x1t = 12
+    x2t = 13
 else:
     x1t = random.randint(0,25)  # starting position for x1
     x2t = random.randint(0,25)  # starting position for x2
-M = 5           # c boundary for M set
-e = 1           # break condition for distance from target position
+M = 0.5           # c boundary for M set
+e = 0.1           # break condition for distance from target position
 k1 = 10.8#10.8  # control gain for rotational motion
-k2 = 0.7#0.05   # control gain for x1 in translational motion
-k3 = 0.7#0.05   # control gain for x2 in translational motion
+k2 = 1#0.05   # control gain for x1 in translational motion
+k3 = 1#0.05   # control gain for x2 in translational motion
 
 # some initialization of lists for printing
 x1_set = []     # plot representative of x1 over time 
@@ -78,9 +80,9 @@ d2 = []
 d3 = [] 
 # some variables
 run_time = 0.01      # discretization time 
-break_steps = 1000    # break time! 
+break_steps = 10000    # break time! 
 plotvar = 25         # define after how many steps the cube will be plotted! 
-camera_steps = 5000   # define after how many steps we use the camera. Later on this maybe regarding the volume of the box
+camera_steps = 50   # define after how many steps we use the camera. Later on this maybe regarding the volume of the box
 # static disturbances
 d1_rot = [-0.1,0.1]
 d1_tran = [-0.1,0.1]
@@ -92,7 +94,7 @@ d1_camera = 0.01
 d2_camera = 0.01
 d3_camera = 0.01
 # compatibility bounds
-w1 = 0.000001  # static at the time being
+w1 = 0.01  # static at the time being
 w2 = 0.3   # 10% percentage of control action for angle
 
 #TODO obstacles should be generated randomly. obstacles dont care about the orientation. should be columns in the 3D space. or plot only in 2d 
@@ -105,6 +107,111 @@ collision_threshold = 15 # threshold to assume that we are close to obstacles (i
 #TODO get_numbers should change if we want to use different run_time of flow and steps of flow.. now it is the same
 #TODO when i use the camera plot trajectories and plot cube should change!!  
 #TODO initial set should be an interval for x_3
+
+
+def calculateslope(x1,x2):
+    correct_angle = (np.arctan2(x2-x2t,x1-x1t))
+    if  x1 >= x1t or (x1<x1t and x2<x2t): correct_angle += math.pi
+    elif  x2 >= x2t : correct_angle = (np.arctan2(x2t-x2,x1t-x1))
+    if correct_angle <0 : correct_angle = 2*math.pi - abs(correct_angle)
+    return correct_angle
+
+
+def rotational_noisy(est_set):
+    x1 = [item[0] for item in est_set]
+    x2 = [item[1] for item in est_set]
+    x3 = [item[2] for item in est_set]
+    xmin = min(x1)
+    xmax = max(x1)
+    ymin = min(x2)
+    ymax = max(x2)
+    x3min = min(x3)
+    x3max = max(x3)
+
+    u2 = cp.Variable()
+    slopeopt = cp.Variable()
+    x3cp = cp.Variable()
+    
+    slopes = []
+    slopes.append(calculateslope(xmin,ymax))
+    slopes.append(calculateslope(xmax,ymin))
+    slopes.append(calculateslope(xmax,ymax))
+    slopes.append(calculateslope(xmin,ymin))
+    print ("slopes: ", slopes)
+    slope_min = min(slopes)
+    slope_max = max(slopes)
+    if slope_min > slope_max: 
+        temp = slope_max
+        slope_max = slope_min
+        slope_min = temp
+    if slope_max > 5.5 and slope_min < 1:
+        slope_max =  2*math.pi - slope_max  
+    if slope_min > slope_max: 
+        temp = slope_max
+        slope_max = slope_min
+        slope_min = temp
+      
+    prob = cp.Problem(cp.Minimize(cp.max(x3cp - slopeopt + u2)  ),
+    [               x3cp >= x3min , x3cp <= x3max, 
+                    slopeopt >= slope_min, slopeopt <= slope_max, 
+                    u2 >= -5 , u2 <= 10,
+                    x3cp - slopeopt + u2 >= 0 ,
+                    
+    ])
+    prob.solve()
+    print("\nThe optimal value is", prob.value)
+    print (x3cp.value, slopeopt.value, u2.value)
+    x3 = x3cp.value + u2.value
+    return u2.value, x3 
+        
+def translational_noisy(est_set):
+    x1 = [item[0] for item in est_set]
+    x2 = [item[1] for item in est_set]
+    x3 = [item[2] for item in est_set]
+    d1 = d1_tran
+    d2 = d2_tran
+    d3 = d3_tran
+    xstar = [x1t,x2t]
+    u = cp.Variable()
+
+    prob = cp.Problem(cp.Minimize(cp.maximum(
+    cp.norm2(cp.vstack([x1[0] + cos(x3[0])* u + d1[0] - xstar[0], x2[0] + sin(x3[0])*u + d2[0] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[0] + cos(x3[0])* u + d1[0] - xstar[0], x2[0] + sin(x3[0])*u + d2[1] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[0] + cos(x3[0])* u + d1[1] - xstar[0], x2[0] + sin(x3[0])*u + d2[0] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[0] + cos(x3[0])* u + d1[1] - xstar[0], x2[0] + sin(x3[0])*u + d2[1] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[0] + cos(x3[1])* u + d1[0] - xstar[0], x2[0] + sin(x3[1])*u + d2[0] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[0] + cos(x3[1])* u + d1[0] - xstar[0], x2[0] + sin(x3[1])*u + d2[1] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[0] + cos(x3[1])* u + d1[1] - xstar[0], x2[0] + sin(x3[1])*u + d2[0] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[0] + cos(x3[1])* u + d1[1] - xstar[0], x2[0] + sin(x3[1])*u + d2[1] -xstar[1]])) ,  
+    cp.norm2(cp.vstack([x1[0] + cos(x3[0])* u + d1[0] - xstar[0], x2[1] + sin(x3[0])*u + d2[0] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[0] + cos(x3[0])* u + d1[0] - xstar[0], x2[1] + sin(x3[0])*u + d2[1] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[0] + cos(x3[0])* u + d1[1] - xstar[0], x2[1] + sin(x3[0])*u + d2[0] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[0] + cos(x3[0])* u + d1[1] - xstar[0], x2[1] + sin(x3[0])*u + d2[1] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[0] + cos(x3[1])* u + d1[0] - xstar[0], x2[1] + sin(x3[1])*u + d2[0] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[0] + cos(x3[1])* u + d1[0] - xstar[0], x2[1] + sin(x3[1])*u + d2[1] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[0] + cos(x3[1])* u + d1[1] - xstar[0], x2[1] + sin(x3[1])*u + d2[0] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[0] + cos(x3[1])* u + d1[1] - xstar[0], x2[1] + sin(x3[1])*u + d2[1] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[1] + cos(x3[0])* u + d1[0] - xstar[0], x2[0] + sin(x3[0])*u + d2[0] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[1] + cos(x3[0])* u + d1[0] - xstar[0], x2[0] + sin(x3[0])*u + d2[1] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[1] + cos(x3[0])* u + d1[1] - xstar[0], x2[0] + sin(x3[0])*u + d2[0] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[1] + cos(x3[0])* u + d1[1] - xstar[0], x2[0] + sin(x3[0])*u + d2[1] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[1] + cos(x3[1])* u + d1[0] - xstar[0], x2[0] + sin(x3[1])*u + d2[0] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[1] + cos(x3[1])* u + d1[0] - xstar[0], x2[0] + sin(x3[1])*u + d2[1] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[1] + cos(x3[1])* u + d1[1] - xstar[0], x2[0] + sin(x3[1])*u + d2[0] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[1] + cos(x3[1])* u + d1[1] - xstar[0], x2[0] + sin(x3[1])*u + d2[1] -xstar[1]])) ,  
+    cp.norm2(cp.vstack([x1[1] + cos(x3[0])* u + d1[0] - xstar[0], x2[1] + sin(x3[0])*u + d2[0] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[1] + cos(x3[0])* u + d1[0] - xstar[0], x2[1] + sin(x3[0])*u + d2[1] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[1] + cos(x3[0])* u + d1[1] - xstar[0], x2[1] + sin(x3[0])*u + d2[0] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[1] + cos(x3[0])* u + d1[1] - xstar[0], x2[1] + sin(x3[0])*u + d2[1] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[1] + cos(x3[1])* u + d1[0] - xstar[0], x2[1] + sin(x3[1])*u + d2[0] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[1] + cos(x3[1])* u + d1[0] - xstar[0], x2[1] + sin(x3[1])*u + d2[1] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[1] + cos(x3[1])* u + d1[1] - xstar[0], x2[1] + sin(x3[1])*u + d2[0] -xstar[1]])) ,
+    cp.norm2(cp.vstack([x1[1] + cos(x3[1])* u + d1[1] - xstar[0], x2[1] + sin(x3[1])*u + d2[1] -xstar[1]])) ,
+                    )), 
+                [u >= 0 , u<= 10])
+    prob.solve()
+    print ("Next u:", u.value)
+    return u.value 
 
 def rotational(x1,x2,x3,df):
     gain = r/l * k1 * df  * run_time
@@ -461,12 +568,13 @@ def get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,
                         x3_trajectory = []
                         #TODO change this and use the function of control actions.. Crucial!
                         if (u3==0):
-                            x_trajectory = [x[0],(x[0]+u1*math.cos(x[2]))]
-                            y_trajectory = [x[1],(x[1]+u2*math.sin(x[2]))]
-                            x3_trajectory = [x[2],(x[2]+d3[k]*run_time)]
+                            x_trajectory = [x[0],(x[0]+u1*math.cos(x[2]))+run_time *d1[i]]
+                            y_trajectory = [x[1],(x[1]+u2*math.sin(x[2]))+run_time *d2[j]]
+                            x3_trajectory = [x[2],(x[2]+run_time *d3[k])]
                         else :
-                            x_trajectory = [x[0],(x[0]+d1[i]*run_time)]
-                            y_trajectory = [x[1],(x[1]+d2[j]*run_time)]
+                            x_trajectory = [x[0],(x[0]+run_time *d1[i])]
+                            y_trajectory = [x[1],(x[1]+run_time *d2[j])]
+                            #TODO x3_trajectory should have +d3
                             x3_trajectory = [x[2],(x[2]+u3)]
                         point = Point(x_trajectory[1],y_trajectory[1],x3_trajectory[1])
                         polygon = Polygon(flow_parallelotope[-1])
@@ -474,59 +582,61 @@ def get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,
                             print ("Danger possible trajectory outside of flow!")
                             print (polygon.exterior.distance(point))
                         vol.plot(x_trajectory,y_trajectory,x3_trajectory,linestyle='--' ,color= 'y')
-        for item in obstacles:
-            maxx = item[1][0]
-            minx = item[0][0]
-            maxy = item[1][1]
-            miny = item[0][1]
-            minx3 = x3minstar
-            maxx3 = x3maxstar
-            obstacle_parallelotope = []
-            obstacle_parallelotope.append([minx,miny,minx3])
-            obstacle_parallelotope.append([minx,miny,maxx3]) 
-            obstacle_parallelotope.append([minx,maxy,minx3]) 
-            obstacle_parallelotope.append([minx,maxy,maxx3]) 
-            obstacle_parallelotope.append([maxx,miny,minx3]) 
-            obstacle_parallelotope.append([maxx,miny,maxx3]) 
-            obstacle_parallelotope.append([maxx,maxy,minx3]) 
-            obstacle_parallelotope.append([maxx,maxy,maxx3]) 
-            for i in range (0,7,2): 
-                volobx = []
-                voloby = []
-                volobz = []
-                volobx.append(obstacle_parallelotope[i][0])      
-                volobx.append(obstacle_parallelotope[i+1][0])
-                voloby.append(obstacle_parallelotope[i][1])
-                voloby.append(obstacle_parallelotope[i+1][1])
-                volobz.append(obstacle_parallelotope[i][2])
-                volobz.append(obstacle_parallelotope[i+1][2])
-                if i == 0 and obstacles.index(item)==0:
-                    vol.plot(volobx, voloby, volobz, linestyle='--',color= 'k', label = "Obstacles")
-                else: 
-                    vol.plot(volobx, voloby, volobz, linestyle='--',color= 'k')
-            for i in range (0,6):
-                if (i!=2 and i!=3): 
+        
+        if plot_obstacles:
+            for item in obstacles:
+                maxx = item[1][0]
+                minx = item[0][0]
+                maxy = item[1][1]
+                miny = item[0][1]
+                minx3 = x3minstar
+                maxx3 = x3maxstar
+                obstacle_parallelotope = []
+                obstacle_parallelotope.append([minx,miny,minx3])
+                obstacle_parallelotope.append([minx,miny,maxx3]) 
+                obstacle_parallelotope.append([minx,maxy,minx3]) 
+                obstacle_parallelotope.append([minx,maxy,maxx3]) 
+                obstacle_parallelotope.append([maxx,miny,minx3]) 
+                obstacle_parallelotope.append([maxx,miny,maxx3]) 
+                obstacle_parallelotope.append([maxx,maxy,minx3]) 
+                obstacle_parallelotope.append([maxx,maxy,maxx3]) 
+                for i in range (0,7,2): 
                     volobx = []
                     voloby = []
                     volobz = []
                     volobx.append(obstacle_parallelotope[i][0])      
-                    volobx.append(obstacle_parallelotope[i+2][0])
+                    volobx.append(obstacle_parallelotope[i+1][0])
                     voloby.append(obstacle_parallelotope[i][1])
-                    voloby.append(obstacle_parallelotope[i+2][1])
+                    voloby.append(obstacle_parallelotope[i+1][1])
                     volobz.append(obstacle_parallelotope[i][2])
-                    volobz.append(obstacle_parallelotope[i+2][2])
+                    volobz.append(obstacle_parallelotope[i+1][2])
+                    if i == 0 and obstacles.index(item)==0:
+                        vol.plot(volobx, voloby, volobz, linestyle='--',color= 'k', label = "Obstacles")
+                    else: 
+                        vol.plot(volobx, voloby, volobz, linestyle='--',color= 'k')
+                for i in range (0,6):
+                    if (i!=2 and i!=3): 
+                        volobx = []
+                        voloby = []
+                        volobz = []
+                        volobx.append(obstacle_parallelotope[i][0])      
+                        volobx.append(obstacle_parallelotope[i+2][0])
+                        voloby.append(obstacle_parallelotope[i][1])
+                        voloby.append(obstacle_parallelotope[i+2][1])
+                        volobz.append(obstacle_parallelotope[i][2])
+                        volobz.append(obstacle_parallelotope[i+2][2])
+                        vol.plot(volobx, voloby, volobz, linestyle='--',color= 'k')
+                for i in range (0,4):
+                    volobx = []
+                    voloby = []
+                    volobz = []
+                    volobx.append(obstacle_parallelotope[i][0])      
+                    volobx.append(obstacle_parallelotope[i+4][0])
+                    voloby.append(obstacle_parallelotope[i][1])
+                    voloby.append(obstacle_parallelotope[i+4][1])
+                    volobz.append(obstacle_parallelotope[i][2])
+                    volobz.append(obstacle_parallelotope[i+4][2])
                     vol.plot(volobx, voloby, volobz, linestyle='--',color= 'k')
-            for i in range (0,4):
-                volobx = []
-                voloby = []
-                volobz = []
-                volobx.append(obstacle_parallelotope[i][0])      
-                volobx.append(obstacle_parallelotope[i+4][0])
-                voloby.append(obstacle_parallelotope[i][1])
-                voloby.append(obstacle_parallelotope[i+4][1])
-                volobz.append(obstacle_parallelotope[i][2])
-                volobz.append(obstacle_parallelotope[i+4][2])
-                vol.plot(volobx, voloby, volobz, linestyle='--',color= 'k')
 
         # save figure
         plt.legend(loc="upper left")
@@ -615,6 +725,10 @@ def check_feasibility(est_set):
     minx3 = min(listx3)
     maxx3 = max(listx3)
     no_borders = obstacles + grid
+    collision = False
+    distance_obstacle = 15000
+    vertice_danger = None
+    closest_point = None 
     for obstacle in no_borders:
         maxx = obstacle[1][0]
         minx = obstacle[0][0]
@@ -629,22 +743,37 @@ def check_feasibility(est_set):
         obstacle_parallelotope.append([maxx,miny,maxx3]) 
         obstacle_parallelotope.append([maxx,maxy,minx3]) 
         obstacle_parallelotope.append([maxx,maxy,maxx3])
-        collision = False
-        distance_obstacle = 10000
-        vertice_danger = 0  
         for vertice in est_set:
             point = Point(vertice[0],vertice[1],vertice[2])
             polygon = Polygon(obstacle_parallelotope)
-            if (polygon.exterior.distance(point)) < collision_threshold : #TODO assign it to public vars
-                if distance_obstacle > polygon.exterior.distance(point):
+            if (polygon.exterior.distance(point)) < collision_threshold : 
+                if distance_obstacle > polygon.exterior.distance(point): 
                     distance_obstacle = polygon.exterior.distance(point)
-                    vertice_danger = est_set.index(vertice)
+                    #vertice_danger = est_set.index(vertice)
                     collision = True
-        if collision:
-            print ("Danger close to ostacle!")
-            print ("Distance to obstacle: " "{:10.2f}".format(distance_obstacle))
-            print ("Vertice of estimation set: ",vertice_danger)
-    return collision,vertice_danger
+                    closest_obstacle = no_borders.index(obstacle)  # TODO useless
+                    # Define half space representation and solve a simple optimization problem with infinity norm
+                    #TODO only do that once! 
+                    vertices = map(array, obstacle_parallelotope)
+                    A, b = compute_polytope_halfspaces(vertices)
+                    vertices = map(array, est_set)
+                    C, d = compute_polytope_halfspaces(vertices)
+                    x = cp.Variable(len(A[0]))
+                    y = cp.Variable(len(C[0]))
+                    prob1 = cp.Problem(cp.Minimize(cp.norm_inf(x-y)),
+                                        [A*x <= b ,
+                                        C*y <= d])
+                    try:
+                        distance_obstacle = prob1.solve()
+                    except Exception as e:
+                        print(e)
+                    closest_point = y.value 
+
+    if collision:
+        print ("Danger close to ostacle!")
+        print ("Distance to obstacle: " "{:10.2f}".format(distance_obstacle))
+        print ("Point (x,y,x3) of estimation set: ",closest_point)
+    return collision, closest_point
 
 def get_tm_intervals(mode): 
     with open("flopipes.txt") as f:
@@ -761,9 +890,11 @@ def get_linear_flowpipe(state_var, state_calc):
     #print (x_out_max)
     return state_out_min, state_out_max
 
-def run_flow(time, d1, d2, d3, u1, u2, u3, jumptime , initial_set, mode,xmin,xmax,ymin,ymax,x3min,x3max,distance,x3):
+def run_flow(time, d1, d2, d3, u1, u2, u3, jumptime, initial_set, mode,xmin,xmax,ymin,ymax,x3min,x3max,distance,x3):
     output = "x,t"
     build_model(time, d1, d2, d3, u1/run_time, u2/run_time, u3/run_time, jumptime , initial_set, mode , output, "x") 
+    #build_model(time, d1, d2, d3, u1, u2, u3, jumptime , initial_set, mode , output, "x") 
+
     rc = call(["./run.sh","x"])
     # #verticesx = get_numbers()
     # x_under, x_over = get_numbers()
@@ -827,6 +958,7 @@ def run_flow(time, d1, d2, d3, u1, u2, u3, jumptime , initial_set, mode,xmin,xma
         #if ymaxstar < yminstar : ymaxstar = yminstar
 
     else: 
+        print (y , wtran, xrootmax)
         yminstar = ymin + math.sqrt(y-wtran -xrootmax) 
         if yminstar < y_under : yminstar = y_under
         #if y_under < ymax: yrootmin = 0 
@@ -835,7 +967,8 @@ def run_flow(time, d1, d2, d3, u1, u2, u3, jumptime , initial_set, mode,xmin,xma
        
     # find x3 interval! 
     x3minstar, x3maxstar = optimization_problem(x3_under,x3_over,x3min,x3max,u3,wangle)    
-    print ("Optimization", xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar)
+    #print ("Optimization", xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar)
+
     xvalue,yvalue,x3value,cube = calculateEstimationSet(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar)
     get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,x_over,y_under,y_over,x3_under,x3_over,u1, u2, u3, d1, d2, d3)
     return xvalue,yvalue,x3value,cube
@@ -1001,6 +1134,8 @@ def simulation():
     x3min = x3 - d3_camera
     x3max = x3 + d3_camera 
     est_set = [[x1-d1_camera,x1+d1_camera],[x2-d2_camera,x2+d2_camera],[x3-d3_camera,x3+d3_camera]]
+    xvalue,yvalue,x3value,cube = calculateEstimationSet(est_set[0][0],est_set[0][1], est_set[1][0], est_set[1][1], est_set[2][0],est_set[2][1])
+    est_set = cube
     estimation_parallelotope.append(list(itertools.product([x1-d1_camera,x1+d1_camera],[x2-d2_camera,x2+d2_camera],[x3-d3_camera,x3+d3_camera])))
     initial_set = ["["+str(x1- d1_camera)+","+str(x1+d1_camera)+"]","["+str(x2- d2_camera)+","+str(x2+d2_camera)+"]","["+str(x3- d3_camera)+","+str(x3+d3_camera)+"]",]
     steps = 0 
@@ -1025,7 +1160,16 @@ def simulation():
             if motion != 0 : 
                 motion = 0
                 changes_in_m +=1 
-            x1,x2,x3,gainx1,gainx2,gainx3,distance = translational(x1,x2,x3)
+            #x1,x2,x3,gainx1,gainx2,gainx3,distance = translational(x1,x2,x3)
+            
+            u = translational_noisy(est_set)
+            gainx1 = run_time *r * k2*u 
+            gainx2 = run_time *r * k3*u
+            gainx3 = 0  
+            x1f = x1 +  gainx1 * math.cos(x3) 
+            x2f = x2 +  gainx2 * math.sin(x3) 
+            distance = (x1f-x1)**2 + (x2f-x2)**2
+            
             d1 = [d1_tran[0]*gainx1, d1_tran[1]*gainx1]
             d2 = [d2_tran[0]*gainx2, d2_tran[1]*gainx2]
             d3 = d3_tran
@@ -1035,23 +1179,29 @@ def simulation():
             if motion != 1 : 
                 motion = 1
                 changes_in_m +=1 
-            x1,x2,x3,gainx1,gainx2,gainx3 = rotational(x1,x2,x3,df)
+            u, x3 = rotational_noisy(est_set)
+            gainx3 = u #* r/l * k1
+            gainx1 = 0 
+            gainx2 = 0 
+            #x1,x2,x3,gainx1,gainx2,gainx3 = rotational(x1,x2,x3,df)
             d1 = d1_rot
             d2 = d2_rot 
             d3 = [d3_rot[0]*gainx3, d3_rot[1]*gainx3]
             distance = 0 
+
             mode = "rot"
             jumptime = 0 
         x1,x2,x3,est_set = run_flow(time,d1,d2,d3,gainx1,gainx2,gainx3,jumptime,initial_set,mode,xmin,xmax,ymin,ymax,x3min,x3max,distance,x3)
-        collision , vertice_danger = check_feasibility(est_set)
-        if collision:
-            #print(est_set[vertice_danger])
-            x1 = est_set[vertice_danger][0]
-            x2 = est_set[vertice_danger][1]
-            x3 = est_set[vertice_danger][2]
+        # collision , closest_point = check_feasibility(est_set)
+        # if collision:
+        #     x1 = closest_point[0]
+        #     x2 = closest_point[1]
+        #     x3 = closest_point[2]
+
         #TODO if we want to assign the representative to a critical vertice (close to obstacle this is the place)
         #x1,x2,x3,est_set = calculateConvexHull(est_set,vertices)
         initial_set, xmin,xmax,ymin,ymax,x3min,x3max = get_initialset(est_set)
+        #input("Press Enter to continue...")
         print ("Final Position: ","{:10.2f}".format(x1t),"{:10.2f}".format(x2t), x3)
         print ("Representative Position: ","{:10.2f}".format(x1),"{:10.2f}".format(x2), "{:10.2f}".format(x3))
         print ("M: ",m)
