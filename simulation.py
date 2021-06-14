@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
+from re import T
 import numpy as np
 import matplotlib.pyplot as plt
 import random
 import math
 import time 
+import csv
+import os
 import subprocess
 import itertools
 import cvxpy as cp
@@ -21,6 +24,7 @@ from matplotlib import cm
 from shapely.geometry import Point
 from shapely.geometry import LineString
 from shapely.geometry.polygon import Polygon
+from matplotlib.patches import Rectangle
 from matplotlib.lines import Line2D
 
 # this is a parallelotope. 
@@ -39,8 +43,9 @@ from matplotlib.lines import Line2D
 # some "global" variables
 plot = True     # True for plotting
 plot_volumes = True # True for step by step plotting of flow and estimation set parallelotopes
-TRAN = False     # True for tran motion at step 1
+TRAN = True    # True for tran motion at step 1
 plot_obstacles = False 
+
 
 r = 6.6 /2.0    # 6.6(cm) radius of wheels in cm 
 l = 13.2        # (cm) distance between the two weels 
@@ -48,10 +53,10 @@ if TRAN == True :
     x1t = 12
     x2t = 13
 else:
-    x1t = random.randint(0,25)  # starting position for x1
-    x2t = random.randint(0,25)  # starting position for x2
+    x1t = random.randint(15,25)  # starting position for x1
+    x2t = random.randint(15,25)  # starting position for x2
 M = 0.5           # c boundary for M set
-e = 0.1           # break condition for distance from target position
+e = 0.2          # break condition for distance from target position
 k1 = 10.8#10.8  # control gain for rotational motion
 k2 = 1#0.05   # control gain for x1 in translational motion
 k3 = 1#0.05   # control gain for x2 in translational motion
@@ -80,22 +85,26 @@ d2 = []
 d3 = [] 
 # some variables
 run_time = 0.01      # discretization time 
-break_steps = 10000    # break time! 
+discretization = 0.01
+break_steps = 35    # break time! 
 plotvar = 25         # define after how many steps the cube will be plotted! 
-camera_steps = 50   # define after how many steps we use the camera. Later on this maybe regarding the volume of the box
+camera_steps = 10000   # define after how many steps we use the camera. Later on this maybe regarding the volume of the box
 # static disturbances
-d1_rot = [-0.1,0.1]
-d1_tran = [-0.1,0.1]
-d2_rot = [-0.1,0.1]
-d2_tran = [-0.1,0.1]
-d3_rot = [-0.1,0.1]
-d3_tran = [-1.0,1.0]
-d1_camera = 0.01
-d2_camera = 0.01
-d3_camera = 0.01
+d1_rot = [-0.0,0.0]#[-0.1,0.1]
+d1_tran = [-0.1,0.1]#[-0.1,0.1]
+d2_rot = [-0.0,0.0] #[-0.1,0.1]
+d2_tran = [-0.1,0.1] #[-0.1,0.1]
+d3_rot = [-0.1,0.1] #[-0.1,0.1]
+d3_tran = [-1,1]
+d1_camera = 0.00
+d2_camera = 0.00
+d3_camera = 0.00
 # compatibility bounds
-w1 = 0.01  # static at the time being
+w1 = 0.0001  # static at the time being
 w2 = 0.3   # 10% percentage of control action for angle
+
+network_delay_distance = [304767.2202,220990.0076,169694.0005,135340.7176,110991.0751,93013.30647,79315.69879,68611.65572,60069.94168]
+ap_locations = [[0,0],[25,25],[3,23],[23,5],[12,12]]
 
 #TODO obstacles should be generated randomly. obstacles dont care about the orientation. should be columns in the 3D space. or plot only in 2d 
 # obstacles are defined by two points according to: up left,  bottom right vertices of the obstacle (that is a parallelotope)
@@ -115,7 +124,6 @@ def calculateslope(x1,x2):
     elif  x2 >= x2t : correct_angle = (np.arctan2(x2t-x2,x1t-x1))
     if correct_angle <0 : correct_angle = 2*math.pi - abs(correct_angle)
     return correct_angle
-
 
 def rotational_noisy(est_set):
     x1 = [item[0] for item in est_set]
@@ -150,8 +158,8 @@ def rotational_noisy(est_set):
         temp = slope_max
         slope_max = slope_min
         slope_min = temp
-      
-    prob = cp.Problem(cp.Minimize(cp.max(x3cp - slopeopt + u2)  ),
+
+    prob = cp.Problem(cp.Minimize(cp.max(x3cp - slopeopt + u2 + d3_rot[0])  ),
     [               x3cp >= x3min , x3cp <= x3max, 
                     slopeopt >= slope_min, slopeopt <= slope_max, 
                     u2 >= -5 , u2 <= 10,
@@ -277,50 +285,73 @@ def plots(steps):
     plt.grid()
     if plot:
         plt.savefig("./output/grid.png")
-        plt.show()
+        #plt.show()
+        plt.close()
 
-    # x1
-    plt.plot(t, x1_set, 'g.',label='x1 over time')
-    plt.xlabel('steps', color='#1C2833')
-    plt.ylabel('x1 (cm)', color='#1C2833')
-    plt.legend(loc='upper left')
-    plt.grid()
-    if plot:
-        plt.savefig("./output/x1.png")
-        plt.show()
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    #ax = plt.subplots()
+    for est_set in estimation_parallelotope:
+        listx = [item[0] for item in est_set]
+        listy = [item[1] for item in est_set]
+        height = max(listy) - min(listy)
+        width = max(listx) -min(listx)
+        ax.add_patch(Rectangle((min(listx), min(listx)), width, height,color ='green'))
+    # ax.xlabel('x1 (cm)', color='#1C2833')
+    # ax.ylabel('x2 (cm)', color='#1C2833')
+    # plt.legend(loc='upper left')
+    #display plot
+    plt.xlim([5, 15])
+    plt.ylim([5, 15])
+    plt.show()
 
-    # x2
-    plt.plot(t, x2_set, 'b.',label='x2 over time')
-    plt.xlabel('steps', color='#1C2833')
-    plt.ylabel('x2 (cm)', color='#1C2833')
-    plt.legend(loc='upper left')
-    plt.grid()
-    if plot:
-        plt.savefig("./output/x2.png")
-        plt.show()
+    # # x1
+    # plt.plot(t, x1_set, 'g.',label='x1 over time')
+    # plt.xlabel('steps', color='#1C2833')
+    # plt.ylabel('x1 (cm)', color='#1C2833')
+    # plt.legend(loc='upper left')
+    # plt.grid()
+    # if plot:
+    #     plt.savefig("./output/x1.png")
+    #     #plt.show()
+    #     plt.close()
 
-    # x3
-    plt.plot(t, x3_set, 'r.',label='x3 over time')
-    plt.xlabel('steps', color='#1C2833')
-    plt.ylabel('x3 (degrees)', color='#1C2833')
-    plt.legend(loc='upper left')
-    plt.grid()
-    if plot:
-        plt.savefig("./output/x3.png")
-        plt.show()
+    # # x2
+    # plt.plot(t, x2_set, 'b.',label='x2 over time')
+    # plt.xlabel('steps', color='#1C2833')
+    # plt.ylabel('x2 (cm)', color='#1C2833')
+    # plt.legend(loc='upper left')
+    # plt.grid()
+    # if plot:
+    #     plt.savefig("./output/x2.png")
+    #     #plt.show()
+    #     plt.close()
+
+    # # x3
+    # plt.plot(t, x3_set, 'r.',label='x3 over time')
+    # plt.xlabel('steps', color='#1C2833')
+    # plt.ylabel('x3 (degrees)', color='#1C2833')
+    # plt.legend(loc='upper left')
+    # plt.grid()
+    # if plot:
+    #     plt.savefig("./output/x3.png")
+    #     #plt.show()
+    #     plt.close()
 
     # m
-    plt.plot(t, m_set, 'b.',label='m over time/ limit=%d' %M)
-    plt.axhline(M,color='red')
-    plt.xlabel('steps', color='#1C2833')
-    plt.ylabel('m ', color='#1C2833')
-    plt.legend(loc='upper left')
-    plt.grid()
-    if plot:
-        plt.savefig("./output/m.png")
-        plt.show()
+    # plt.plot(t, m_set, 'b.',label='m over time/ limit=%d' %M)
+    # plt.axhline(M,color='red')
+    # plt.xlabel('steps', color='#1C2833')
+    # plt.ylabel('m ', color='#1C2833')
+    # plt.legend(loc='upper left')
+    # plt.grid()
+    # if plot:
+    #     plt.savefig("./output/m.png")
+    #     #plt.show()
+    #     plt.close()
 
     # d
+
     plt.plot(t, d_set, 'b.',label='d over time/ limit=%d' %e)
     plt.axhline(e,color='red')
     plt.xlabel('steps', color='#1C2833')
@@ -329,39 +360,44 @@ def plots(steps):
     plt.grid()
     if plot:
         plt.savefig("./output/d.png")
-        plt.show()
+        #plt.show()
+        plt.close()
 
-    # angle dif 
-    plt.plot(t, angledf_set, 'r.',label='angledif over time')
-    plt.xlabel('steps', color='#1C2833')
-    plt.ylabel('angledif  (degrees)', color='#1C2833')
-    plt.legend(loc='upper left')
-    plt.grid()
-    if plot:
-        plt.savefig("./output/angledif.png")
-        plt.show()
+    # # angle dif 
+    # plt.plot(t, angledf_set, 'r.',label='angledif over time')
+    # plt.xlabel('steps', color='#1C2833')
+    # plt.ylabel('angledif  (degrees)', color='#1C2833')
+    # plt.legend(loc='upper left')
+    # plt.grid()
+    # if plot:
+    #     plt.savefig("./output/angledif.png")
+    #     #plt.show()
+    #     plt.close()
 
-    # df
-    plt.plot(t, df_set, 'r.',label='angle needed to rotate in order to look target')
-    plt.xlabel('steps', color='#1C2833')
-    plt.ylabel('angle needed to rotate in order to look target (degrees)', color='#1C2833')
-    plt.legend(loc='upper left')
-    plt.grid()
-    if plot:
-        plt.savefig("./output/df.png")
-        plt.show()
+    # # df
+    # plt.plot(t, df_set, 'r.',label='angle needed to rotate in order to look target')
+    # plt.xlabel('steps', color='#1C2833')
+    # plt.ylabel('angle needed to rotate in order to look target (degrees)', color='#1C2833')
+    # plt.legend(loc='upper left')
+    # plt.grid()
+    # if plot:
+    #     plt.savefig("./output/df.png")
+    #     #plt.show()
+    #     plt.close()
 
-    # difference between two methods
-    plt.plot(t, temp_set, 'r.',label='difference between two methods')
-    plt.xlabel('steps', color='#1C2833')
-    plt.ylabel('difference between two methods (degrees)', color='#1C2833')
-    plt.legend(loc='upper left')
-    plt.grid()
-    if plot:
-        plt.savefig("./output/methods.png")
-        plt.show()
+    # # difference between two methods
+    # plt.plot(t, temp_set, 'r.',label='difference between two methods')
+    # plt.xlabel('steps', color='#1C2833')
+    # plt.ylabel('difference between two methods (degrees)', color='#1C2833')
+    # plt.legend(loc='upper left')
+    # plt.grid()
+    # if plot:
+    #     plt.savefig("./output/methods.png")
+    #     #plt.show()
+    #     plt.close()
 
-    # difference between two methods
+    t = np.linspace(0,steps+1,steps+1)
+    # flow volume, estimation_volume
     plt.plot(t, flow_volume, 'r.',label='volumes of flow set parallelotope')
     plt.plot(t, estimation_volume, 'b.',label='volumes of estimation set parallelotope cm^3')
     plt.xlabel('steps', color='#1C2833')
@@ -370,7 +406,8 @@ def plots(steps):
     plt.grid()
     if plot:
         plt.savefig("./output/volumes.png")
-        plt.show()
+        #plt.show()
+        plt.close()
 
 def plot_cube():
     fig = plt.figure()
@@ -481,7 +518,7 @@ def get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,
             vol2z.append(flow_parallelotope[-1][i][2])
             vol2z.append(flow_parallelotope[-1][i+1][2])
             if i == 0 :
-                vol.plot(vol2x, vol2y, vol2z, linestyle=':' , color='r',  label = "Flow")
+                vol.plot(vol2x, vol2y, vol2z, linestyle=':' , color='r',  label = "TM over-approximation")
             else: 
                 vol.plot(vol2x, vol2y, vol2z, linestyle=':' , color='r')
             vol3x.append(estimation_parallelotope[-2][i][0])      
@@ -491,7 +528,7 @@ def get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,
             vol3z.append(estimation_parallelotope[-2][i][2])
             vol3z.append(estimation_parallelotope[-2][i+1][2])
             if i == 0 :
-                vol.plot(vol3x, vol3y, vol3z, linestyle=':' ,color= 'b', label = "Previous estimation Set")
+                vol.plot(vol3x, vol3y, vol3z, linestyle=':' ,color= 'b', label = "Current Estimation Set")
             else: 
                 vol.plot(vol3x, vol3y, vol3z, linestyle=':' ,color= 'b')
 
@@ -559,29 +596,29 @@ def get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,
             vol3z.append(estimation_parallelotope[-2][i+4][2])
             vol.plot(vol3x, vol3y, vol3z, linestyle=':' ,color= 'b')
         # plot trajectories from previous estimation set vertices given the control action to validate that exist inside the new estimation set
-        for x in estimation_parallelotope[-2]:
-            for i in range (2):
-                for j in range (2):
-                    for k in range (2):
-                        x_trajectory = []
-                        y_trajectory = []
-                        x3_trajectory = []
-                        #TODO change this and use the function of control actions.. Crucial!
-                        if (u3==0):
-                            x_trajectory = [x[0],(x[0]+u1*math.cos(x[2]))+run_time *d1[i]]
-                            y_trajectory = [x[1],(x[1]+u2*math.sin(x[2]))+run_time *d2[j]]
-                            x3_trajectory = [x[2],(x[2]+run_time *d3[k])]
-                        else :
-                            x_trajectory = [x[0],(x[0]+run_time *d1[i])]
-                            y_trajectory = [x[1],(x[1]+run_time *d2[j])]
-                            #TODO x3_trajectory should have +d3
-                            x3_trajectory = [x[2],(x[2]+u3)]
-                        point = Point(x_trajectory[1],y_trajectory[1],x3_trajectory[1])
-                        polygon = Polygon(flow_parallelotope[-1])
-                        if (polygon.exterior.distance(point)) > 1e-2 : 
-                            print ("Danger possible trajectory outside of flow!")
-                            print (polygon.exterior.distance(point))
-                        vol.plot(x_trajectory,y_trajectory,x3_trajectory,linestyle='--' ,color= 'y')
+        # for x in estimation_parallelotope[-2]:
+        #     for i in range (2):
+        #         for j in range (2):
+        #             for k in range (2):
+        #                 x_trajectory = []
+        #                 y_trajectory = []
+        #                 x3_trajectory = []
+        #                 #TODO change this and use the function of control actions.. Crucial!
+        #                 if (u3==0):
+        #                     x_trajectory = [x[0],(x[0]+u1*math.cos(x[2]))+run_time *d1[i]]
+        #                     y_trajectory = [x[1],(x[1]+u2*math.sin(x[2]))+run_time *d2[j]]
+        #                     x3_trajectory = [x[2],(x[2]+run_time *d3[k])]
+        #                 else :
+        #                     x_trajectory = [x[0],(x[0]+run_time *d1[i])]
+        #                     y_trajectory = [x[1],(x[1]+run_time *d2[j])]
+        #                     #TODO x3_trajectory should have +d3
+        #                     x3_trajectory = [x[2],(x[2]+u3)]
+        #                 point = Point(x_trajectory[1],y_trajectory[1],x3_trajectory[1])
+        #                 polygon = Polygon(flow_parallelotope[-1])
+        #                 if (polygon.exterior.distance(point)) > 1e-2 : 
+        #                     print ("Danger possible trajectory outside of flow!")
+        #                     print (polygon.exterior.distance(point))
+        #                 vol.plot(x_trajectory,y_trajectory,x3_trajectory,linestyle='--' ,color= 'y')
         
         if plot_obstacles:
             for item in obstacles:
@@ -645,11 +682,11 @@ def get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,
         #plt.show()  
         plt.close()
 
-def lists_renew(x1,x2,x3,d,m,df,angle):
+def lists_renew(x1,x2,x3,distance,m,df,angle):
     x1_set.append(x1)
     x2_set.append(x2)
     x3_set.append(math.degrees(x3))
-    d_set.append(d)
+    d_set.append(distance)
     m_set.append(m)
     df_set.append(math.degrees(df))
     angledf_set.append(math.degrees(angle))
@@ -658,7 +695,7 @@ def lists_renew(x1,x2,x3,d,m,df,angle):
 def build_model(time, d1, d2, d3, u1, u2, u3, jumptime, initial_set, mode,output,name):
     with open('replan.model', 'w') as the_file:
         the_file.write('hybrid reachability\n''{\n''  state var x,y,x3,t \n'' setting\n''{\n'
-        'fixed steps '+str(run_time)+'\n''time '+str(run_time)+'\n' # time  
+        'fixed steps '+str(run_time)+'\n''time '+str(discretization)+'\n' # time  
         'remainder estimation 1e-2\n''identity precondition\n''gnuplot grid 5 '+ output+'\n'
         'fixed orders 8\n''cutoff 1e-15\n''precision 2000\n''output '+name+'\n''max jumps 1\n''print on\n''}\n')
         the_file.write('modes\n'
@@ -890,7 +927,63 @@ def get_linear_flowpipe(state_var, state_calc):
     #print (x_out_max)
     return state_out_min, state_out_max
 
-def run_flow(time, d1, d2, d3, u1, u2, u3, jumptime, initial_set, mode,xmin,xmax,ymin,ymax,x3min,x3max,distance,x3):
+def compatibility(time, d1, d2, d3, u1, u2, u3, jumptime, initial_set, mode,xmin,xmax,ymin,ymax,x3min,x3max,distance,x3,x_under,x_over,y_under,y_over,x3_under,x3_over):
+    measur1 = distance
+    y = distance 
+
+    wtran =  w1 * distance
+    wangle = w2 * 5
+    #wangle = random.uniform(0.1,0.3)
+    #let's find x1,x2 intervals. the flow results cut with compatibility equations chosen. 
+    yrootmin, yrootmax = optimize_quadratic(y_under,y_over, ymin,ymax,measur1,wtran)   # I want the minimum and maximum value of under root! check overleaf
+    xrootmin, xrootmax = optimize_quadratic(x_under,x_over, xmin,xmax,measur1,wtran)   
+    
+    if xmin >= x_under :    #TODO edw thelei allagi logika. kati den paei kala! 
+        #print ("negative for x's")
+        xminstar = xmin - math.sqrt(y-wtran -yrootmin) 
+        if xminstar < x_under : xminstar = x_under
+        xmaxstar = xmax - math.sqrt(y+wtran -yrootmax) 
+        if xmaxstar > x_over : 
+            xmaxstar = x_over 
+        #if xmaxstar < xminstar : xmaxstar = xminstar
+
+    else : 
+        if y-wtran -yrootmax < 0 : xminstar = xmin
+        else:
+            xminstar = xmin + math.sqrt(y-wtran -yrootmax) #max(x_under, (xmin))   # wrong if negative motion!! 
+        if xminstar < x_under : xminstar = x_under
+        #if x_under < xmax: xrootmin = 0 
+        xmaxstar = xmax + math.sqrt(y+wtran -yrootmin) #min(x_over, (xmax +math.sqrt(measur1+wtran))
+        if xmaxstar > x_over : 
+            #print ("panw orio", xmaxstar, yrootmin, math.sqrt(y+wtran -yrootmin) )
+            xmaxstar = x_over 
+
+    if ymin >= y_under :
+        #print ("negative for y's")
+        if y-wtran -xrootmin < 0 : yminstar = ymin
+        yminstar = ymin - math.sqrt(y-wtran -xrootmin) 
+        if yminstar < y_under : yminstar = y_under
+        ymaxstar = ymax - math.sqrt(y+wtran -xrootmax)  
+        if ymaxstar > y_over : ymaxstar = y_over 
+        #if ymaxstar < yminstar : ymaxstar = yminstar
+
+    else: 
+        print (y , wtran, xrootmax)
+        yminstar = ymin + math.sqrt(y-wtran -xrootmax) 
+        if yminstar < y_under : yminstar = y_under
+        #if y_under < ymax: yrootmin = 0 
+        ymaxstar = ymax + math.sqrt(y+wtran -xrootmin)  #min(y_over, (ymax +math.sqrt(measur1+wtran)))
+        if ymaxstar > y_over : ymaxstar = y_over 
+       
+    # find x3 interval! 
+    x3minstar, x3maxstar = optimization_problem(x3_under,x3_over,x3min,x3max,u3,wangle)    
+    print ("Optimization", xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar)
+
+    xvalue,yvalue,x3value,cube = calculateEstimationSet(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar)
+    get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,x_over,y_under,y_over,x3_under,x3_over,u1, u2, u3, d1, d2, d3)
+    return xvalue,yvalue,x3value,cube
+
+def run_flow(time, d1, d2, d3, u1, u2, u3, jumptime, initial_set, mode):
     output = "x,t"
     build_model(time, d1, d2, d3, u1/run_time, u2/run_time, u3/run_time, jumptime , initial_set, mode , output, "x") 
     #build_model(time, d1, d2, d3, u1, u2, u3, jumptime , initial_set, mode , output, "x") 
@@ -916,62 +1009,7 @@ def run_flow(time, d1, d2, d3, u1, u2, u3, jumptime, initial_set, mode,xmin,xmax
     print ("Gains: ",u1,u2,u3)
     #input("Press Enter to continue...")
     print ("Flow:",x_under,x_over,y_under,y_over,x3_under,x3_over)
-    measur1 = distance
-    y = distance 
-    #print (distance)
-    #TODO stupid change! 
-    if distance ==0 : wtranst = random.uniform(1.1,1.2)
-    else : wtranst = 0 
-    if u3 == 0 : wrotst = random.uniform(0.001,0.002)
-    else: wrotst = 0 
-    wtran =  w1 * distance #+ wtranst
-    wangle = w2 * abs(u3) + wrotst      #random.uniform(0.001,0.002)
-
-    #let's find x1,x2 intervals. the flow results cut with compatibility equations chosen. 
-    yrootmin, yrootmax = optimize_quadratic(y_under,y_over, ymin,ymax,measur1,wtran)   # I want the minimum and maximum value of under root! check overleaf
-    xrootmin, xrootmax = optimize_quadratic(x_under,x_over, xmin,xmax,measur1,wtran)   
-    
-    if xmin >= x_under :    #TODO edw thelei allagi logika. kati den paei kala! 
-        #print ("negative for x's")
-        xminstar = xmin - math.sqrt(y-wtran -yrootmin) 
-        if xminstar < x_under : xminstar = x_under
-        xmaxstar = xmax - math.sqrt(y+wtran -yrootmax) 
-        if xmaxstar > x_over : 
-            xmaxstar = x_over 
-        #if xmaxstar < xminstar : xmaxstar = xminstar
-
-    else : 
-        xminstar = xmin + math.sqrt(y-wtran -yrootmax) #max(x_under, (xmin))   # wrong if negative motion!! 
-        if xminstar < x_under : xminstar = x_under
-        #if x_under < xmax: xrootmin = 0 
-        xmaxstar = xmax + math.sqrt(y+wtran -yrootmin) #min(x_over, (xmax +math.sqrt(measur1+wtran))
-        if xmaxstar > x_over : 
-            #print ("panw orio", xmaxstar, yrootmin, math.sqrt(y+wtran -yrootmin) )
-            xmaxstar = x_over 
-
-    if ymin >= y_under :
-        #print ("negative for y's")
-        yminstar = ymin - math.sqrt(y-wtran -xrootmin) 
-        if yminstar < y_under : yminstar = y_under
-        ymaxstar = ymax - math.sqrt(y+wtran -xrootmax)  
-        if ymaxstar > y_over : ymaxstar = y_over 
-        #if ymaxstar < yminstar : ymaxstar = yminstar
-
-    else: 
-        print (y , wtran, xrootmax)
-        yminstar = ymin + math.sqrt(y-wtran -xrootmax) 
-        if yminstar < y_under : yminstar = y_under
-        #if y_under < ymax: yrootmin = 0 
-        ymaxstar = ymax + math.sqrt(y+wtran -xrootmin)  #min(y_over, (ymax +math.sqrt(measur1+wtran)))
-        if ymaxstar > y_over : ymaxstar = y_over 
-       
-    # find x3 interval! 
-    x3minstar, x3maxstar = optimization_problem(x3_under,x3_over,x3min,x3max,u3,wangle)    
-    #print ("Optimization", xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar)
-
-    xvalue,yvalue,x3value,cube = calculateEstimationSet(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar)
-    get_volumes(xminstar,xmaxstar,yminstar,ymaxstar,x3minstar,x3maxstar,x_under,x_over,y_under,y_over,x3_under,x3_over,u1, u2, u3, d1, d2, d3)
-    return xvalue,yvalue,x3value,cube
+    return x_under,x_over,y_under,y_over,x3_under,x3_over
 
 def optimization_problem(v3min,v3max,z3min,z3max,y,w):
     v3 = cp.Variable()
@@ -1116,16 +1154,84 @@ def calculateConvexHull(est_set,vertices):
     #return (tempx,tempy,check_angle(tempz),convex_points)
     return (tempx,tempy,tempz,convex_points)
 
+def maxdistance_set_target(est_set):
+    max_distance = 0 
+    for vertices in est_set:
+        dist = math.sqrt((vertices[0]-x1t)**2 + (vertices[1]-x2t)**2)
+        if dist > max_distance: max_distance = dist
+    return max_distance
+
+def translational_convergence(max_distance, x_under,x_over,y_under,y_over):
+    offloading_condition = 0 
+    vertices = list(itertools.product([x_under,x_over],[y_under,y_over]))
+    for point in vertices:
+        dist = math.sqrt((point[0]-x1t)**2 + (point[1]-x2t)**2)
+        if dist >= max_distance: 
+            print ("oleeee OFFLOAD")
+            offloading_condition = 1
+    return offloading_condition
+
+def network_overhead_calc(x1,x2):
+    min_dist = 10000
+    for vertices in ap_locations:
+        dist = math.sqrt((vertices[0]-x1)**2 + (vertices[1]-x2)**2)
+        if dist < min_dist: 
+            min_dist = dist  
+    print ("Distance from AP", dist)
+    c_bytes = network_delay_distance[int(min_dist)]
+    print ("c bytes", c_bytes)
+    # random uniform for image megabytes
+    image_bytes = random.uniform(0.05,0.1) * 1000000
+    network_overhead = image_bytes / c_bytes
+    print ("network overhead", network_overhead)
+    #input("Press Enter to continue...")
+    return network_overhead
+
+def computing_overhead_calc():
+    mu, sigma = 0.75, 0.16 # mean and standard deviation
+    cores = np.random.normal(mu, sigma)
+    if cores < 0.25: cores = 0.25
+    if cores > 1.5: cores =  1.5
+    cores= random.uniform(0.25,2)
+    computing_overhead = -1.34*cores+3.675
+    print ("computing overhead", computing_overhead)
+    #input("Press Enter to continue...")
+    return computing_overhead
+
+def utility_function(offloading_condition,network_overhead,computing_overhead,max_distance):
+    if offloading_condition == 1: return 20 
+    convergence = estimation_volume[-1] / max_distance
+    c1 = 12
+    c2 = 2
+    utility  = c1 * convergence - c2 * (network_overhead+computing_overhead) + 10
+    print ("vol/d:",  convergence)
+    print ("e_uoff:",  (network_overhead+computing_overhead))
+    print ("utility", utility)
+    filename = "./utility.csv"
+    with open(filename, 'a') as myfile:
+	    wr = csv.writer(myfile, quoting=csv.QUOTE_ALL)
+	    # If opened for the first time, insert header row           
+	    if os.path.getsize(filename) == 0:
+	        wr.writerow(["max_distance_from_target","volume_estimation_set","vol/dmax","network_overhead","computing_overhead","e_offl","utility"])
+	    wr.writerow([max_distance,estimation_volume[-1],convergence,network_overhead,computing_overhead,-(network_overhead+computing_overhead),utility])
+    #input("Press Enter to continue...")
+    return utility 
+
 def simulation():
     starting_time = time.time()
+    number_offloading = 0 
     #initialization of simulation
     if TRAN == True:
         x1in = x1 = 5#random.randint(0,25)
         x2in = x2 = 5#random.randint(0,25) 
         x3in = x3 = 1#random.randrange(100,128)/100 #random.randrange(10,628)/100
     else : 
-        x1in = x1 = random.randint(0,25)
-        x2in = x2 = random.randint(0,25) 
+        x1in = x1 = random.randint(0,15)
+        while (x1 == x1t):
+            x1in = x1 = random.randint(0,15)
+        x2in = x2 = random.randint(0,15)
+        while (x2 == x2t):
+            x2in = x2 = random.randint(0,15) 
         x3in = x3 = random.randrange(100,128)/100 #random.randrange(10,628)/100
     xmin = x1 - d1_camera
     xmax = x1 + d1_camera
@@ -1138,15 +1244,18 @@ def simulation():
     est_set = cube
     estimation_parallelotope.append(list(itertools.product([x1-d1_camera,x1+d1_camera],[x2-d2_camera,x2+d2_camera],[x3-d3_camera,x3+d3_camera])))
     initial_set = ["["+str(x1- d1_camera)+","+str(x1+d1_camera)+"]","["+str(x2- d2_camera)+","+str(x2+d2_camera)+"]","["+str(x3- d3_camera)+","+str(x3+d3_camera)+"]",]
+    flow_volume.append(0)
+    estimation_volume.append(0)
     steps = 0 
     steps2 = 0 
     changes_in_m = 0 
     motion = 0              # 0 for translational , 1 for rotational 
-    d = math.sqrt((x1-x1t)**2 + (x2-x2t)**2)
+    distance = math.sqrt((x1-x1t)**2 + (x2-x2t)**2)
     print ("Initial Position:", x1,x2,"{:10.0f}".format(math.degrees(x3)))
     print ("Target Position: ", x1t,x2t)
     print ("\n")
-    while (d>e):
+    offload = True
+    while (distance>e):
         #input("Press Enter to continue...")
         df = calculateangle (x1,x2,x3) 
         #TODO fix zero division error
@@ -1156,26 +1265,44 @@ def simulation():
             angle = x3 - abs(math.atan((x2-x2t)/(x1-x1t)))  
         #m = abs(angle) * (math.sqrt((x1-x1t)**2 + (x2-x2t)**2))
         m = abs(df) * (math.sqrt((x1-x1t)**2 + (x2-x2t)**2))   # check if we can proceed to rotational motion
-        if m < M :
+        #TODO implement new M set
+        distance = (math.sqrt((x1-x1t)**2 + (x2-x2t)**2))
+        d = d3_rot[0] # implement the same for [1]
+        l = math.sqrt(2/d**2*abs(1-math.cos(d)))
+        u1 = 4*distance/l * math.cos(d+angle) 
+        #print ("u are:", distance,l,(d+angle), math.cos(d+angle))
+        d = d3_rot[1] # implement the same for [1]
+        l = math.sqrt(2/d**2*abs(1-math.cos(d)))
+        u2 = 4*distance/l * math.cos(d+angle) 
+        #print ("u are:", distance,l,(d+angle), math.cos(d+angle))
+        u = min(u1,u2)
+        print (u)
+        #print ("u are:", u1,u2)
+        #input("Press Enter to continue...")
+        #m = run_time**2*u * math.sin(2*x3+2*d3_rot[1])
+        #m2 = 4*math.pow(d,4)*(math.cos(d3_tran[1]+angle))**2
+       
+        if u > 0 and offload :
             if motion != 0 : 
                 motion = 0
                 changes_in_m +=1 
-            #x1,x2,x3,gainx1,gainx2,gainx3,distance = translational(x1,x2,x3)
             
-            u = translational_noisy(est_set)
-            gainx1 = run_time *r * k2*u 
-            gainx2 = run_time *r * k3*u
+            #x1,x2,x3,gainx1,gainx2,gainx3,distance = translational(x1,x2,x3)
+            #u = translational_noisy(est_set)
+            gainx1 = u *discretization
+            gainx2 = u *discretization
             gainx3 = 0  
             x1f = x1 +  gainx1 * math.cos(x3) 
             x2f = x2 +  gainx2 * math.sin(x3) 
-            distance = (x1f-x1)**2 + (x2f-x2)**2
-            
-            d1 = [d1_tran[0]*gainx1, d1_tran[1]*gainx1]
-            d2 = [d2_tran[0]*gainx2, d2_tran[1]*gainx2]
-            d3 = d3_tran
+            distance_traversed = (x1f-x1)**2 + (x2f-x2)**2
+
+            d1 = [d1_tran[0], d1_tran[1]]
+            d2 = [d2_tran[0], d2_tran[1]]
+            d3 = [d3_tran[0] ,d3_tran[1]]
             mode = "tran"
             jumptime = 1 
         else:
+            if offload == False: offload = True
             if motion != 1 : 
                 motion = 1
                 changes_in_m +=1 
@@ -1186,12 +1313,59 @@ def simulation():
             #x1,x2,x3,gainx1,gainx2,gainx3 = rotational(x1,x2,x3,df)
             d1 = d1_rot
             d2 = d2_rot 
-            d3 = [d3_rot[0]*gainx3, d3_rot[1]*gainx3]
-            distance = 0 
+            d3 = [d3_rot[0], d3_rot[1]]
+            distance_traversed = 0 
 
             mode = "rot"
             jumptime = 0 
-        x1,x2,x3,est_set = run_flow(time,d1,d2,d3,gainx1,gainx2,gainx3,jumptime,initial_set,mode,xmin,xmax,ymin,ymax,x3min,x3max,distance,x3)
+        
+        x_under,x_over,y_under,y_over,x3_under,x3_over = run_flow(time,d1,d2,d3,gainx1,gainx2,gainx3,jumptime,initial_set,mode)
+        max_distance = maxdistance_set_target(est_set)
+        offloading_condition = 0 
+        if mode=="tran":
+            offloading_condition = translational_convergence(max_distance,x_under,x_over,y_under,y_over)
+        
+        network_overhead = network_overhead_calc(x1,x2)
+        computing_overhead = computing_overhead_calc()
+        remote_time = int((network_overhead+computing_overhead)/0.1)
+        utility = utility_function(offloading_condition,network_overhead,computing_overhead,max_distance)
+
+        if (steps >break_steps):
+            break
+        if (utility > 6.5 or steps2 > camera_steps):    # use camera and make estimation set a point! 
+            #input("Press Enter to continue...")
+            offload = False
+            number_offloading += 1
+            #random point in estimation set! not just the representative
+            listx = [item[0] for item in est_set]
+            listy = [item[1] for item in est_set]
+            listx3 = [item[2] for item in est_set]
+            x1 = random.uniform(min(listx),max(listx))
+            x2 = random.uniform(min(listy),max(listy))
+            x3 = random.uniform(min(listx3),max(listx3))
+            initial_set = ["["+str(x1- d1_camera)+","+str(x1+d1_camera)+"]","["+str(x2- d2_camera)+","+str(x2+d2_camera)+"]","["+str(x3- d3_camera)+","+str(x3+d3_camera)+"]",]
+            xmin = x1 - d1_camera
+            xmax = x1 + d1_camera
+            ymin = x2 - d2_camera
+            ymax = x2 + d2_camera
+            x3min = x3 - d3_camera
+            x3max = x3+ d3_camera 
+            max_distance = maxdistance_set_target(est_set)
+            x1,x2,x3,est_set = calculateEstimationSet(xmin,xmax,ymin,ymax,x3min,x3max)
+            initial_set, xmin,xmax,ymin,ymax,x3min,x3max = get_initialset(est_set)
+
+            steps2 = 0 
+            steps+=remote_time # simulate transmission + plus computation time! unfortunately this is in sec
+            for i in range (remote_time):
+                lists_renew(x1,x2,x3,max_distance,m,df,angle)
+                flow_volume.append(flow_volume[-1])
+                estimation_volume.append(estimation_volume[-1])
+        else:
+            x1,x2,x3,est_set =compatibility(time,d1,d2,d3,gainx1,gainx2,gainx3,jumptime,initial_set,mode,xmin,xmax,ymin,ymax,x3min,x3max,distance_traversed,x3,x_under,x_over,y_under,y_over,x3_under,x3_over)
+            initial_set, xmin,xmax,ymin,ymax,x3min,x3max = get_initialset(est_set)
+            lists_renew(x1,x2,x3,max_distance,m,df,angle) 
+            steps +=1 
+            steps2 += 1 
         # collision , closest_point = check_feasibility(est_set)
         # if collision:
         #     x1 = closest_point[0]
@@ -1200,31 +1374,22 @@ def simulation():
 
         #TODO if we want to assign the representative to a critical vertice (close to obstacle this is the place)
         #x1,x2,x3,est_set = calculateConvexHull(est_set,vertices)
-        initial_set, xmin,xmax,ymin,ymax,x3min,x3max = get_initialset(est_set)
+
         #input("Press Enter to continue...")
         print ("Final Position: ","{:10.2f}".format(x1t),"{:10.2f}".format(x2t), x3)
         print ("Representative Position: ","{:10.2f}".format(x1),"{:10.2f}".format(x2), "{:10.2f}".format(x3))
         print ("M: ",m)
-        d = math.sqrt((x1-x1t)**2 + (x2-x2t)**2)
-        print ("Distance difference:", "{:10.2f}".format(d))
+
+        #distance = math.sqrt((x1-x1t)**2 + (x2-x2t)**2)
+        print ("Distance difference:", "{:10.2f}".format(distance))
         print ("Angle difference:", "{:10.2f}".format(df))
         print ("Steps: ",steps)
         print ("Volume of estimation set: ", estimation_volume[-1])
+        print ("number_offloading ", number_offloading)
         print ("\n ")
-        lists_renew(x1,x2,x3,d,m,df,angle) 
-        steps +=1 
-        steps2 += 1 
-        if steps > break_steps : break
-        if steps2 >= camera_steps or estimation_volume[-1] > 30 :    # use camera and make estimation set a point! 
-            print ("Offload due to Volume of estimation set: ", estimation_volume[-1])
-            initial_set = ["["+str(x1- d1_camera)+","+str(x1+d1_camera)+"]","["+str(x2- d2_camera)+","+str(x2+d2_camera)+"]","["+str(x3- d3_camera)+","+str(x3+d3_camera)+"]",]
-            xmin = x1 - d1_camera
-            xmax = x1 + d1_camera
-            ymin = x2 - d2_camera
-            ymax = x2 + d2_camera
-            x3min = x3 - d3_camera
-            x3max = x3+ d3_camera 
-            steps2 = 0 
+    #end of while 
+
+
     print ("Initial Position:", x1in,x2in,"{:10.0f}".format(math.degrees(x3in)))
     print ("Target Position: ", x1t,x2t)
     print ("Final Position: ","{:10.2f}".format(x1),"{:10.2f}".format(x2),"{:10.0f}".format(math.degrees(x3)))
@@ -1234,7 +1399,7 @@ def simulation():
     print ("Steps:", steps)
     print ("Real time needed for simulation in sec :", "{:10.2f}".format(time.time() - starting_time))
     plots(steps)  
-    plot_cube()
+    #plot_cube()
     
 if __name__ == '__main__':
     simulation()
